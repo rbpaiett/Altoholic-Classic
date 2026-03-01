@@ -25,6 +25,9 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ]]
 
+local GetNumAddOns = GetNumAddOns or C_AddOns.GetNumAddOns
+local GetAddOnMetadata = GetAddOnMetadata or C_AddOns.GetAddOnMetadata
+
 local PT3, oldminor = LibStub:NewLibrary("LibPeriodicTable-3.1", tonumber(("$Revision: 603 $"):match("(%d+)")) + 90000)
 if not PT3 then
 	return

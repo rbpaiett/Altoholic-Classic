@@ -26,8 +26,9 @@ local AddonDB_Defaults = {
 			['*'] = {				-- ["Account.Realm.Name"]
 				lastUpdate = nil,
 				Quests = {},
+				-- QuestLinks = {},			-- No quest links in Classic !!
 				QuestHeaders = {},
-                QuestTitles = {},
+				QuestTitles = {},
 				QuestTags = {},
 				Rewards = {},
 				Money = {},
@@ -191,11 +192,11 @@ local function RestoreHeaders()
 	wipe(headersState)
 end
 
-local function ScanChoices(rewards)
+local function ScanChoices(rewards, questID)
 	-- rewards = out parameter
 
 	-- these are the actual item choices proposed to the player
-	for i = 1, GetNumQuestLogChoices() do
+	for i = 1, GetNumQuestLogChoices(questID) do
 		local _, _, numItems, _, isUsable = GetQuestLogChoiceInfo(i)
 		isUsable = isUsable and 1 or 0	-- this was 1 or 0, in WoD, it is a boolean, convert back to 0 or 1
 		local link = GetQuestLogItemLink("choice", i)
@@ -225,18 +226,15 @@ local function ScanRewards(rewards)
 	end
 end
 
-local function ScanRewardSpells(rewards)
+local function ScanRewardSpells(rewards, questID)
 	-- rewards = out parameter
 			
-	for index = 1, GetNumQuestLogRewardSpells() do
-		local _, _, isTradeskillSpell, isSpellLearned = GetQuestLogRewardSpell(index)
-		if isTradeskillSpell or isSpellLearned then
-			local link = GetQuestLogSpellLink(index)
-			if link then
-				local id = tonumber(link:match("spell:(%d+)"))
-				if id then
-					table.insert(rewards, format("s|%d", id))
-				end
+    for _, spellID in ipairs(C_QuestInfoSystem.GetQuestRewardSpells(questID) or {}) do
+        if spellID and spellID > 0 then
+            local spellInfo = C_QuestInfoSystem.GetQuestRewardSpellInfo(questID, spellID);
+
+            if spellInfo and (spellInfo.isTradeskill or spellInfo.isSpellLearned) then
+                table.insert(rewards, format("s|%d", spellID))
 			end
 		end
 	end
@@ -245,7 +243,7 @@ end
 local function ScanQuests()
 	local char = addon.ThisCharacter
 	local quests = char.Quests
-	local links = char.QuestLinks
+	-- local links = char.QuestLinks
 	local headers = char.QuestHeaders
 	local rewards = char.Rewards
 	local tags = char.QuestTags
@@ -253,6 +251,7 @@ local function ScanQuests()
 	local money = char.Money
 
 	wipe(quests)
+	-- wipe(links)
 	wipe(headers)
 	wipe(rewards)
 	wipe(tags)
@@ -267,18 +266,13 @@ local function ScanQuests()
 	local lastQuestIndex = 0
 	
 	for i = 1, GetNumQuestLogEntries() do
-        local title, level, groupSize, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, 
+		local title, level, groupSize, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, 
 				isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden = GetQuestLogTitle(i)
-        local groupSize = 1
-        if (questTag ~= nil) then
-            groupSize = 5
-        end
-        
-        
-        --, isHeader, isCollapsed, isComplete, frequency, questID, 
-       -- startEvent, displayQuestID, 
-		--		isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden 
 
+		-- 2019/09/01 groupSize = "Dungeon", "Raid" in Classic, not numeric !!
+		-- temporary fix: set it to 0
+		groupSize = 0
+				
 		if isHeader then
 			table.insert(headers, title or "")
 			lastHeaderIndex = lastHeaderIndex + 1
@@ -293,7 +287,8 @@ local function ScanQuests()
 			value = value + LShift(isHidden and 1 or 0, 5)					-- bit 5 : isHidden
 			value = value + LShift((groupSize == 0) and 1 or 0, 6)		-- bit 6 : isSolo
 			-- bit 7 : unused, reserved
-			value = value + LShift(groupSize, 8)							-- bits 8-10 : groupSize, 3 bits, shouldn't exceed 5
+			
+			value = value + LShift(groupSize or 1, 8)						-- bits 8-10 : groupSize, 3 bits, shouldn't exceed 5
 			value = value + LShift(lastHeaderIndex, 11)					-- bits 11-15 : index of the header (zone) to which this quest belongs
 			value = value + LShift(level, 16)								-- bits 16-23 : level
 			-- value = value + LShift(GetQuestLogRewardMoney(), 24)		-- bits 24+ : money
@@ -303,12 +298,13 @@ local function ScanQuests()
 			
 			tags[lastQuestIndex] = GetQuestTagID(questID, isComplete, frequency)
 			titles[lastQuestIndex] = title
+			-- links[lastQuestIndex] = GetQuestLink(questID)
 			money[lastQuestIndex] = GetQuestLogRewardMoney()
 
 			wipe(rewardsCache)
-			ScanChoices(rewardsCache)
+			ScanChoices(rewardsCache, questID)
 			ScanRewards(rewardsCache)
-			ScanRewardSpells(rewardsCache)
+			ScanRewardSpells(rewardsCache, questID)
 
 			if #rewardsCache > 0 then
 				rewards[lastQuestIndex] = table.concat(rewardsCache, ",")
@@ -345,7 +341,7 @@ local function RefreshQuestHistory()
 	local history = thisChar.History
 	wipe(history)
 	local quests = {}
-	GetQuestsCompleted(quests)
+	GetQuestsCompleted(quests)	-- works in Classic !! Yay \o/ 
 
 	--[[	In order to save memory, we'll save the completion status of 32 quests into one number (by setting bits 0 to 31)
 		Ex:
@@ -401,7 +397,11 @@ local function _GetQuestLogInfo(character, index)
 	local groupName = character.QuestHeaders[headerIndex]		-- This is most often the zone name, or the profession name
 	
 	local tag = character.QuestTags[index]
+	-- local link = character.QuestLinks[index]
+	local link = nil
+	-- local questID = link:match("quest:(%d+)")
 	local questID = nil
+	-- local questName = link:match("%[(.+)%]")
 	local questName = character.QuestTitles[index]
 	
 	return questName, questID, link, groupName, level, groupSize, tag, isComplete, isDaily, isTask, isBounty, isStory, isHidden, isSolo
@@ -615,8 +615,9 @@ end
 -- *** Hooks ***
 -- GetQuestReward is the function that actually turns in a quest
 hooksecurefunc("GetQuestReward", function(choiceIndex)
+	-- 2019/09/09 : questID is valid, even in Classic
 	local questID = GetQuestID() -- returns the last displayed quest dialog's questID
-
+	
 	if not GetOption("TrackTurnIns") or not questID then return end
 	
 	local history = addon.ThisCharacter.History

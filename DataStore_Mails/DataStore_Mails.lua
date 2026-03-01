@@ -12,7 +12,6 @@ local addon = _G[addonName]
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 
-local THIS_ACCOUNT = "Default"
 local commPrefix = "DS_Mails"		-- let's keep it a bit shorter than the addon name, this goes on a comm channel, a byte is a byte ffs :p
 local MAIL_EXPIRY = 30		-- Mails expire after 30 days
 
@@ -172,13 +171,13 @@ local function ScanMailbox()
 	wipe(character.Mails)
 	wipe(character.MailCache)	-- fully clear the mail cache, since the mailbox will now be properly scanned
 	
-	local numItems = GetInboxNumItems();
+	local numItems = GetInboxNumItems()
 	if numItems == 0 then
 		return
 	end
 	
 	for i = 1, numItems do
-		local _, stationaryIcon, mailSender, mailSubject, mailMoney, _, days, numAttachments, _, wasReturned = GetInboxHeaderInfo(i);
+		local _, stationaryIcon, mailSender, mailSubject, mailMoney, _, days, numAttachments, _, wasReturned = GetInboxHeaderInfo(i)
 		if numAttachments then	-- treat attachments as separate entries
 			SaveAttachments(character, i, mailSender, days, wasReturned)
 		end
@@ -230,7 +229,12 @@ end
 
 local function OnMailClosed()
 	addon.isOpen = nil
-	addon:UnregisterEvent("MAIL_CLOSED")
+	
+	--if WOW_PROJECT_ID == WOW_PROJECT_CLASSIC then
+	--	addon:UnregisterEvent("MAIL_CLOSED")
+	--else
+		addon:UnregisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_HIDE")
+	--end
 	ScanMailbox()
 	
 	local character = addon.ThisCharacter
@@ -240,16 +244,34 @@ local function OnMailClosed()
 	addon:UnregisterEvent("MAIL_SEND_INFO_UPDATE")
 end
 
+local function OnManagerFrameHide(eventName, ...)
+	local paneType = ...
+	if paneType ==  Enum.PlayerInteractionType.MailInfo then 
+		OnMailClosed()
+	end
+end
+
 local function OnMailShow()
 	-- the event may be triggered multiple times, exit if the mailbox is already open
 	if addon.isOpen then return end	
 	
 	CheckInbox()
-	addon:RegisterEvent("MAIL_CLOSED", OnMailClosed)
+	--if WOW_PROJECT_ID == WOW_PROJECT_CLASSIC then
+	--	addon:RegisterEvent("MAIL_CLOSED", OnMailClosed)
+	--else
+		addon:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_HIDE", OnManagerFrameHide)
+	--end
 	addon:RegisterEvent("MAIL_INBOX_UPDATE", OnMailInboxUpdate)
 
 	-- create a temporary table to hold the attachments that will be sent, keep it local since the event is rare
 	addon.isOpen = true
+end
+
+local function OnManagerFrameShow(eventName, ...)
+	local paneType = ...
+	if paneType ==  Enum.PlayerInteractionType.MailInfo then 
+		OnMailShow()
+	end
 end
 
 -- ** Mixins **
@@ -292,6 +314,16 @@ local function _GetMailInfo(character, index)
 	return data.icon, data.count, data.link, data.money, data.text, data.returned
 end
 
+local function _IterateMails(character, callback)
+	for index = 1, _GetNumMails(character) do
+		callback(_GetMailInfo(character, index))
+		
+		-- Sample:
+		-- DataStore:IterateMails(character, function(icon, count, itemLink, money, text, returned) 
+		-- end)
+	end
+end
+
 local function _GetMailSender(character, index)
 	local data = GetMailTable(character, index)
 	return data.sender
@@ -318,20 +350,24 @@ local function _GetMailSubject(character, index)
 	
 	local name
 	local link = data.link
+	
 	if link then
 		local id = GetIDFromLink(link)
 		name = GetItemInfo(id)
 	end
+	
 	return name
 end
 
 local function _GetNumExpiredMails(character, threshold)
 	local count = 0
+	
 	for i = 1, _GetNumMails(character) do
 		if _GetMailExpiry(character, i) < threshold then
 			count = count + 1
 		end
 	end
+	
 	return count
 end
 
@@ -369,11 +405,12 @@ local function _ClearMailboxEntries(character)
 	wipe(character.MailCache)
 end
 
-local PublicMethods = {
+local mixins = {
 	GetMailboxLastVisit = _GetMailboxLastVisit,
 	GetMailItemCount = _GetMailItemCount,
 	GetNumMails = _GetNumMails,
 	GetMailInfo = _GetMailInfo,
+	IterateMails = _IterateMails,
 	GetMailSender = _GetMailSender,
 	GetMailExpiry = _GetMailExpiry,
 	GetMailSubject = _GetMailSubject,
@@ -391,7 +428,7 @@ local guildMailRecipientKey		-- key of the alt who receives a mail from a guildm
 local GuildCommCallbacks = {
 	[MSG_SENDMAIL_INIT] = function(sender, recipient)
 			guildMailRecipient = recipient
-			guildMailRecipientKey = format("%s.%s.%s", THIS_ACCOUNT, GetRealmName(), recipient)
+			guildMailRecipientKey = format("%s.%s.%s", DataStore.ThisAccount, DataStore.ThisRealm, recipient)
 		end,
 	[MSG_SENDMAIL_END] = function(sender)
 			if guildMailRecipient then
@@ -435,10 +472,10 @@ local function CheckExpiries()
 		if pos then
 			addon.db.global.Characters[key] = nil
 		else
-			if allAccounts or ((allAccounts == false) and (account == THIS_ACCOUNT)) then		-- all accounts, or only current and current was found
-				if allRealms or ((allRealms == false) and (realm == GetRealmName())) then			-- all realms, or only current and current was found
+			if allAccounts or ((allAccounts == false) and (account == DataStore.ThisAccount)) then		-- all accounts, or only current and current was found
+				if allRealms or ((allRealms == false) and (realm == DataStore.ThisRealm)) then			-- all realms, or only current and current was found
 		
-				-- detect return vs delete
+					-- detect return vs delete
 					local numExpiredMails = _GetNumExpiredMails(character, threshold)
 					if numExpiredMails > 0 then
 						expiryFound = true
@@ -459,15 +496,16 @@ local function CheckExpiries()
 end
 
 function addon:OnInitialize()
-	addon.db = LibStub("AceDB-3.0"):New(addonName .. "DB", AddonDB_Defaults)
+	addon.db = LibStub("AceDB-3.0"):New(format("%sDB", addonName), AddonDB_Defaults)
 
-	DataStore:RegisterModule(addonName, addon, PublicMethods)
+	DataStore:RegisterModule(addonName, addon, mixins)
 	DataStore:SetGuildCommCallbacks(commPrefix, GuildCommCallbacks)
 	
 	DataStore:SetCharacterBasedMethod("GetMailboxLastVisit")
 	DataStore:SetCharacterBasedMethod("GetMailItemCount")
 	DataStore:SetCharacterBasedMethod("GetNumMails")
 	DataStore:SetCharacterBasedMethod("GetMailInfo")
+	DataStore:SetCharacterBasedMethod("IterateMails")
 	DataStore:SetCharacterBasedMethod("GetMailSender")
 	DataStore:SetCharacterBasedMethod("GetMailExpiry")
 	DataStore:SetCharacterBasedMethod("GetMailSubject")
@@ -481,6 +519,9 @@ end
 
 function addon:OnEnable()
 	addon:RegisterEvent("MAIL_SHOW", OnMailShow)
+	--if WOW_PROJECT_ID ~= WOW_PROJECT_CLASSIC then
+		addon:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", OnManagerFrameShow)
+	--end
 	addon:RegisterEvent("BAG_UPDATE", OnBagUpdate)
 	
 	addon:SetupOptions()
@@ -491,6 +532,9 @@ end
 
 function addon:OnDisable()
 	addon:UnregisterEvent("MAIL_SHOW")
+	--if WOW_PROJECT_ID ~= WOW_PROJECT_CLASSIC then
+		addon:UnregisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_SHOW")
+	--end
 	addon:UnregisterEvent("BAG_UPDATE")
 end
 
@@ -529,12 +573,14 @@ local function SendOwnMail(characterKey, subject, body)
 end
 
 hooksecurefunc("SendMail", function(recipient, subject, body, ...)
+	body = body or ""			-- body could be nil when SendMail is used in a macro
+	
 	-- this function takes care of saving mails sent to alts directly into their mailbox, so that client addons don't have to take care about it
 	local isRecipientAnAlt
 
 	local recipientName, recipientRealm = strsplit("-", recipient)
 	
-	recipientRealm = recipientRealm or GetRealmName()
+	recipientRealm = recipientRealm or DataStore.ThisRealm
 	-- for the current realm, recipientRealm could be
 	-- 	- empty (recipient = "Thaoky")
 	--		- packed named (recipient = "Thaoky-MarécagedeZangar" => realm should be "Marécage de Zangar"
@@ -593,7 +639,7 @@ hooksecurefunc("ReturnInboxItem", function(index, ...)
 
 	local recipientName, recipientRealm = strsplit("-", mailSender)
 
-	recipientRealm = recipientRealm or GetRealmName()
+	recipientRealm = recipientRealm or DataStore.ThisRealm
 	
 	-- do we have an alt on the target realm ?
 	for realm in pairs(DataStore:GetRealms()) do

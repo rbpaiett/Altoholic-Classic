@@ -5,7 +5,13 @@ local colors = addon.Colors
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 
 local parentName = "AltoholicTabSearch"
-local parent
+local parent = _G[parentName]
+
+-- Add this line to ensure parent is updated if it was nil at load
+local function GetParent()
+    if not parent then parent = _G[parentName] end
+    return parent
+end
 
 local highlightIndex
 
@@ -16,113 +22,164 @@ local ns = addon.Tabs.Search		-- ns = namespace
 local currentClass
 local currentSubClass
 
+local GetAuctionItemSubClasses = function(id)
+    if not id then return {} end
+    return C_AuctionHouse.GetAuctionItemSubClasses(id)
+end
+
 -- from Blizzard_AuctionData.lua & LuaEnum.lua
 -- Note : review this later on, I suspect Blizzard will change this again
 local categories = {
 	{
-		name = AUCTION_CATEGORY_WEAPONS,
-		class = LE_ITEM_CLASS_WEAPON,
+		name = AUCTION_CATEGORY_WEAPONS or C_Item.GetItemClassInfo(2) or "Weapons",
+		class = 2,
 		subClasses = {
-			LE_ITEM_WEAPON_AXE1H, LE_ITEM_WEAPON_MACE1H, LE_ITEM_WEAPON_SWORD1H,
-			LE_ITEM_WEAPON_AXE2H, LE_ITEM_WEAPON_MACE2H, LE_ITEM_WEAPON_SWORD2H, 
-			LE_ITEM_WEAPON_WARGLAIVE, LE_ITEM_WEAPON_DAGGER, LE_ITEM_WEAPON_UNARMED, LE_ITEM_WEAPON_WAND,
-			LE_ITEM_WEAPON_POLEARM, LE_ITEM_WEAPON_STAFF,
-			LE_ITEM_WEAPON_BOWS, LE_ITEM_WEAPON_CROSSBOW, LE_ITEM_WEAPON_GUNS, LE_ITEM_WEAPON_THROWN,
-			LE_ITEM_WEAPON_FISHINGPOLE,
+			0, 4, 7, -- One-Handed Axes, Maces, Swords
+			1, 5, 8, -- Two-Handed Axes, Maces, Swords
+			15, 13, 20, 19, -- Daggers, Fist Weapons, Wands
+			6, 10, -- Polearms, Staves
+			2, 3, 18, -- Bows, Crossbows, Guns
+			16, 20 -- Thrown, Fishing Poles
 		},
 		isCollapsed = true,
 	},
 	{
-		name = AUCTION_CATEGORY_ARMOR,
-		class = LE_ITEM_CLASS_ARMOR,
-		subClasses = {
-			LE_ITEM_ARMOR_PLATE, LE_ITEM_ARMOR_MAIL, LE_ITEM_ARMOR_LEATHER, LE_ITEM_ARMOR_CLOTH, 
-			LE_ITEM_ARMOR_GENERIC, LE_ITEM_ARMOR_SHIELD, LE_ITEM_ARMOR_COSMETIC,
-		},
-		isCollapsed = true,
-	},
+        name = AUCTION_CATEGORY_ARMOR or C_Item.GetItemClassInfo(4) or "Armor",
+		class = 4,
+        subClasses = {
+            4, -- Plate
+            3, -- Mail
+            2, -- Leather
+            1, -- Cloth
+            0, -- Generic/Miscellaneous
+            6, -- Shields
+            5, -- Cosmetic (Added for modern engine compatibility)
+        },
+        isCollapsed = true,
+    },
+    {
+        name = AUCTION_CATEGORY_PROJECTILES or C_Item.GetItemClassInfo(6) or "Projectiles",
+		class = 6,
+        subClasses = { 2, 3 }, -- Arrows (2) and Bullets (3)
+        isCollapsed = true,
+    },
 	{
-		name = AUCTION_CATEGORY_CONTAINERS,
-		class = LE_ITEM_CLASS_CONTAINER,
-		subClasses = { GetAuctionItemSubClasses(LE_ITEM_CLASS_CONTAINER) },
-		isCollapsed = true,
-	},
+        name = AUCTION_CATEGORY_CONTAINERS,
+        class = 1,
+        subClasses = {
+            0, -- Bag
+            1, -- Soul Bag
+            2, -- Herb Bag
+            3, -- Enchanting Bag
+            4, -- Engineering Bag
+            5, -- Gem Bag
+            6, -- Mining Bag
+            7, -- Leatherworking Bag
+        }, -- Ensure there is no ID 8 or extra comma here
+        isCollapsed = true,
+    },
+	    {
+        name = AUCTION_CATEGORY_GEMS,
+        class = 3, -- Hardcoded ID for Gems
+        subClasses = {
+            0, -- Red
+            1, -- Blue
+            2, -- Yellow
+            3, -- Purple
+            4, -- Green
+            5, -- Orange
+            6, -- Meta
+            7, -- Simple
+            8, -- Prismatic
+        },
+        isCollapsed = true,
+    },
+	        {
+        name = AUCTION_CATEGORY_ITEM_ENHANCEMENT or C_Item.GetItemClassInfo(8) or "Item Enhancements",
+        class = 8,
+        subClasses = {
+            0, -- Generic (This is the only one the game is currently naming)
+        },
+        isCollapsed = true,
+    },
+	    {
+        name = AUCTION_CATEGORY_CONSUMABLES or C_Item.GetItemClassInfo(0) or "Consumables",
+        class = 0,
+        subClasses = { 
+            0, -- Food & Drink
+            1, -- Potion
+            2, -- Elixir
+            3, -- Flask
+            5, -- Food & Drink (Alternative)
+            6, -- Item Enhancement (Armor Kits/Oils - Verified by ArkInventory)
+            8, -- Other
+        },
+        isCollapsed = true,
+    },
 	{
-		name = AUCTION_CATEGORY_GEMS,
-		class = LE_ITEM_CLASS_GEM,
-		subClasses = { GetAuctionItemSubClasses(LE_ITEM_CLASS_GEM) },
-		isCollapsed = true,
-	},
+        name = AUCTION_CATEGORY_TRADE_GOODS,
+        class = 7,
+        subClasses = { 1, 4, 5, 6, 7, 10, 12 }, -- Parts, JC, Cloth, Leather, Metal, Elemental, Enchanting
+        isCollapsed = true,
+    },
 	{
-		name = AUCTION_CATEGORY_ITEM_ENHANCEMENT,
-		class = LE_ITEM_CLASS_ITEM_ENHANCEMENT,
-		subClasses = { GetAuctionItemSubClasses(LE_ITEM_CLASS_ITEM_ENHANCEMENT) },
-		isCollapsed = true,
-	},
+        name = AUCTION_CATEGORY_RECIPES,
+        class = 9,
+        subClasses = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, -- Books + all Profession recipes
+        isCollapsed = true,
+    },
 	{
-		name = AUCTION_CATEGORY_CONSUMABLES,
-		class = LE_ITEM_CLASS_CONSUMABLE,
-		subClasses = { GetAuctionItemSubClasses(LE_ITEM_CLASS_CONSUMABLE) },
-		isCollapsed = true,
-	},
+        name = AUCTION_CATEGORY_QUEST_ITEMS,
+        class = 12, -- Numeric ID for Quest Items
+        subClasses = { 0 }, -- Quest items usually only have a generic sub-category
+        isCollapsed = true,
+    },
 	{
-		name = AUCTION_CATEGORY_GLYPHS,
-		class = LE_ITEM_CLASS_GLYPH,
-		subClasses = { GetAuctionItemSubClasses(LE_ITEM_CLASS_GLYPH) },
-		isCollapsed = true,
-	},
-	{
-		name = AUCTION_CATEGORY_TRADE_GOODS,
-		class = LE_ITEM_CLASS_TRADEGOODS,
-		subClasses = { GetAuctionItemSubClasses(LE_ITEM_CLASS_TRADEGOODS) },
-		isCollapsed = true,
-	},
-	{
-		name = AUCTION_CATEGORY_RECIPES,
-		class = LE_ITEM_CLASS_RECIPE,
-		subClasses = { GetAuctionItemSubClasses(LE_ITEM_CLASS_RECIPE) },
-		isCollapsed = true,
-	},
-	{
-		name = AUCTION_CATEGORY_QUEST_ITEMS,
-		class = LE_ITEM_CLASS_QUESTITEM,
-		subClasses = { GetAuctionItemSubClasses(LE_ITEM_CLASS_QUESTITEM) },
-		isCollapsed = true,
-	},
-	{
-		name = AUCTION_CATEGORY_MISCELLANEOUS,
-		class = LE_ITEM_CLASS_MISCELLANEOUS,
-		subClasses = { GetAuctionItemSubClasses(LE_ITEM_CLASS_MISCELLANEOUS) },
-		isCollapsed = true,
-	},
+        name = AUCTION_CATEGORY_MISCELLANEOUS,
+        class = 15,
+        subClasses = { 0, 1, 2, 3, 4 }, -- Junk, Reagents, Holiday, Other, Mounts
+        isCollapsed = true,
+    }
 }
 
 local function Header_OnClick(frame)
-	local header = categories[frame.itemTypeIndex]
-	header.isCollapsed = not header.isCollapsed
+    local header = categories[frame.itemTypeIndex]
+    header.isCollapsed = not header.isCollapsed
 
-	ns:Update()
+    ns:Update()
+    
+    -- Anniversary TBC Scrollbar Fix
+    local scrollFrame = _G["AltoholicSearchScrollFrame"]
+    if scrollFrame then
+        scrollFrame:UpdateScrollChildRect()
+    end
 end
 
 local function Item_OnClick(frame)
-	local category = categories[frame.itemTypeIndex]
-	local class = category.class
-	local subClass = category.subClasses[frame.itemSubTypeIndex]
-	
-	-- 1005 = class 1, sub 5
-	highlightIndex = (frame.itemTypeIndex * 1000) + frame.itemSubTypeIndex
-	ns:Update()
-	
-	addon.Search:FindItem(GetItemClassInfo(class), GetItemSubClassInfo(class, subClass))
+    local category = categories[frame.itemTypeIndex]
+    local class = category.class
+    local subClass = category.subClasses[frame.itemSubTypeIndex]
+    
+    highlightIndex = (frame.itemTypeIndex * 1000) + frame.itemSubTypeIndex
+    ns:Update()
+    
+    -- Modern API Update for 2026
+    local className = C_Item.GetItemClassInfo(class or 0)
+    local subClassName = C_Item.GetItemSubClassInfo(class or 0, subClass or 0)
+    
+    addon.Search:FindItem(className, subClassName)
 end
 
 function ns:OnLoad()
-	parent = _G[parentName]
-	parent.SortButtons.Sort1:SetText(L["Item / Location"])
-	parent.SortButtons.Sort2:SetText(L["Character"])
-	parent.SortButtons.Sort3:SetText(L["Realm"])
-	parent.Slot:SetText(L["Equipment Slot"])
-	parent.Location:SetText(L["Location"])
+    parent = _G[parentName]
+    if not parent or not parent.SortButtons then return end -- Safety exit if UI isn't ready
+    
+    parent.SortButtons.Sort1:SetText(L["Item / Location"])
+    parent.SortButtons.Sort2:SetText(L["Character"])
+    parent.SortButtons.Sort3:SetText(L["Realm"])
+    parent.Slot:SetText(L["Equipment Slot"])
+    parent.Location:SetText(L["Location"])
+    -- ... rest of your code ...
 end
 
 function ns:Update()
@@ -157,41 +214,48 @@ function ns:Update()
 	local menuButton
 	
 	for rowIndex = 1, numRows do
-		menuButton = scrollFrame:GetRow(rowIndex)
-		
-		local line = rowIndex + offset
-		
-		if line > #MenuCache then
-			menuButton:Hide()
-		else
-			local p = MenuCache[line]
-			
-			menuButton:SetWidth(buttonWidth)
-			menuButton.Text:SetWidth(buttonWidth - 21)
-			if p.needsHighlight then
-				menuButton:LockHighlight()
-			else
-				menuButton:UnlockHighlight()
-			end			
-			
-			if p.linetype == 1 then
-				menuButton.Text:SetText(format("%s%s", colors.white, categories[p.dataIndex].name))
-				menuButton:SetScript("OnClick", Header_OnClick)
-				menuButton.itemTypeIndex = p.dataIndex
-			elseif p.linetype == 2 then
-				local category = categories[p.parentIndex]
-				local class = category.class
-				local subClass = category.subClasses[p.dataIndex]
-			
-				menuButton.Text:SetText("|cFFBBFFBB   " .. GetItemSubClassInfo(class, subClass))
-				menuButton:SetScript("OnClick", Item_OnClick)
-				menuButton.itemTypeIndex = p.parentIndex
-				menuButton.itemSubTypeIndex = p.dataIndex
-			end
+    menuButton = scrollFrame:GetRow(rowIndex)
+    
+    local line = rowIndex + offset
+    
+    if line > #MenuCache then
+        menuButton:Hide()
+    else
+        local p = MenuCache[line]
+        
+        menuButton:SetWidth(buttonWidth)
+        menuButton.Text:SetWidth(buttonWidth - 21)
+        if p.needsHighlight then
+            menuButton:LockHighlight()
+        else
+            menuButton:UnlockHighlight()
+        end			
+        
+        if p.linetype == 1 then
+            -- 2026 Fix: Use "or" to provide a fallback name if the Blizzard constant is missing
+            local headerName = categories[p.dataIndex].name or "Unknown Category"
+            menuButton.Text:SetText(format("%s%s", colors.white, headerName))
+            
+            menuButton:SetScript("OnClick", Header_OnClick)
+            menuButton.itemTypeIndex = p.dataIndex
+        elseif p.linetype == 2 then
+            local category = categories[p.parentIndex]
+            local class = category.class
+            local subClass = category.subClasses[p.dataIndex]
+        
+            -- Anniversary 2026 Fix: Capture the name first to check for nil
+            local subClassName = C_Item.GetItemSubClassInfo(class or 0, subClass or 0)
+            
+            menuButton.Text:SetText("|cFFBBFFBB   " .. (subClassName or "Unknown"))
+            
+            menuButton:SetScript("OnClick", Item_OnClick)
+            menuButton.itemTypeIndex = p.parentIndex
+            menuButton.itemSubTypeIndex = p.dataIndex
+        end
 
-			menuButton:Show()
-		end
-	end
+        menuButton:Show()
+    end
+end
 	
 	scrollFrame:Update(#MenuCache)
 end
@@ -366,4 +430,11 @@ function ns:TooltipStats(frame)
 		end
 	end
 	AltoTooltip:Show()
+end
+
+-- Bridge the XML call to the namespace function
+function AltoholicTabSearch_OnLoad(self)
+    parent = self
+    _G["AltoholicTabSearch"] = self
+    ns:OnLoad()
 end

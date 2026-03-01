@@ -167,7 +167,7 @@ addon.Suggestions = {
 		{ 300, "286~300: 瘟疫花\n东瘟疫之地|西瘟疫之地|费伍德森林|\n冰盖草\n冬泉谷" },
 	},
 	[L["Skinning"]] = {
-		{ 375, "1~375: 技能等级处以5,\n所获值对应的可剥皮怪物" }
+		{ 300, "1~300: 技能等级处以5,\n所获值对应的可剥皮怪物" }
 	},
 	-- 来源: http://www.almostgaming.com/wowguides/world-of-warcraft-lockpicking-guide
 	[L["Lockpicking"]] = {

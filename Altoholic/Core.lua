@@ -4,8 +4,8 @@ _G[addonName] = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "A
 
 local addon = _G[addonName]
 
-addon.Version = "v1.13.012"
-addon.VersionNum = 113012
+addon.Version = "v1.15.007"
+addon.VersionNum = 115007
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 local commPrefix = addonName
@@ -79,7 +79,7 @@ local AddonDB_Defaults = {
 			["UI.Tabs.Summary.CurrentFactions"] = 3,							-- 1 = Alliance, 2 = Horde, 3 = Both
 			["UI.Tabs.Summary.CurrentLevels"] = 1,								-- 1 = All
 			["UI.Tabs.Summary.CurrentLevelsMin"] = 1,							
-			["UI.Tabs.Summary.CurrentLevelsMax"] = 60,					
+			["UI.Tabs.Summary.CurrentLevelsMax"] = 70,					
 			["UI.Tabs.Summary.CurrentClasses"] = 0,							-- 0 = All
 			["UI.Tabs.Summary.CurrentTradeSkill"] = 0,						-- 0 = All
 			["UI.Tabs.Summary.SortAscending"] = true,							-- ascending or descending sort order
@@ -110,11 +110,11 @@ local AddonDB_Defaults = {
 			-- ** Grids tab options **
 			["UI.Tabs.Grids.Reputations.CurrentXPack"] = 1,					-- Current expansion pack 
 			["UI.Tabs.Grids.Reputations.CurrentFactionGroup"] = 1,		-- Current faction group in that xpack
-			["UI.Tabs.Grids.Currencies.CurrentTokenType"] = nil,			-- Current token type (default to nil = all-in-one)  
+			["UI.Tabs.Grids.Currencies.CurrentTokenType"] = nil,			-- Current token type (default to nil = all-in-one)
 			["UI.Tabs.Grids.Tradeskills.CurrentXPack"] = 1,					-- Current expansion pack 
 			["UI.Tabs.Grids.Tradeskills.CurrentTradeSkill"] = 1,			-- Current tradeskill index
 			["UI.Tabs.Grids.Dungeons.CurrentXPack"] = 1,						-- Current expansion pack 
-			["UI.Tabs.Grids.Dungeons.CurrentRaids"] = 1,						-- Current raid index 
+			["UI.Tabs.Grids.Dungeons.CurrentRaids"] = 1,						-- Current raid index
 
 			-- ** Tooltip options **
 			["UI.Tooltip.ShowItemSource"] = true,
@@ -127,7 +127,7 @@ local AddonDB_Defaults = {
 			["UI.Tooltip.ShowCrossFactionCount"] = true,			-- display counters for both factions on a pve server
 			["UI.Tooltip.ShowMergedRealmsCount"] = true,			-- display counters for characters on connected realms
 			["UI.Tooltip.ShowAllAccountsCount"] = true,			-- display counters for all accounts on the same realm
-            ["UI.Tooltip.ShowSellPrice"] = true,					-- Sell price per unit
+			["UI.Tooltip.ShowSellPrice"] = true,					-- Sell price per unit
 			
 			-- ** Mail options **
 			["UI.Mail.GuildMailWarning"] = true,					-- be informed when a guildie sends a mail to one of my alts
@@ -281,8 +281,11 @@ function addon:OnInitialize()
 	addon:RegisterComm(commPrefix, DataStore:GetGuildCommHandler())
 	
 	-- this event MUST stay here, we have to be able to respond to a request event if the guild tab is not loaded
+	-- addon:RegisterMessage("DATASTORE_BANKTAB_REQUESTED")
+	addon:RegisterMessage("DATASTORE_GUILD_MAIL_RECEIVED")
 	addon:RegisterMessage("DATASTORE_GLOBAL_MAIL_EXPIRY")
 	addon:RegisterMessage("DATASTORE_CS_TIMEGAP_FOUND")
+	addon:RegisterMessage("DATASTORE_GUILD_LEFT")
 end
 
 function addon:GetGuildMemberVersion(member)
@@ -319,15 +322,15 @@ local SPELL_ID_HERBALISM = 2366
 
 local SPELL_ID_COOKING = 2550
 local SPELL_ID_FIRSTAID = 3273
-local SPELL_ID_FISHING = 7733
+local SPELL_ID_FISHING = 7732			-- do not use 7733, it's "Artisan Fishing", not "Fishing"
 
 addon.TradeSkills = {
 	Recipes = {},
 	-- spell IDs in alphabetical order (english), primary then secondary
-    spellIDs = { 2259, 3100, 7411, 4036, 2108, 3908, 8613, 2575, 2366, 2550, 3273, 7733 },
+	spellIDs = { 2259, 3100, 7411, 4036, 2108, 3908, 8613, 2575, 2366, 2550, 3273, 7732 },
 	firstSecondarySkillIndex = 10, -- index of the first secondary profession in the table
 	
-	AccountSummaryFiltersSpellIDs = { 2259, 3100, 7411, 4036, 2108, 3908, 8613, 2575, 2366, 2550, 3273, 7733 },
+	AccountSummaryFiltersSpellIDs = { 2259, 3100, 7411, 4036, 2108, 3908, 8613, 2575, 2366, 2550, 3273, 7732 },
 	AccountSummaryFirstSecondarySkillIndex = 10, -- index of the first secondary profession in the table
 		
 	Names = {
@@ -336,12 +339,13 @@ addon.TradeSkills = {
 		COOKING = GetSpellInfo(2550),
 		ENCHANTING = GetSpellInfo(7411),
 		ENGINEERING = GetSpellInfo(4036),
-        FIRSTAID = GetSpellInfo(3273),
-		FISHING = GetSpellInfo(18248),
+		FIRSTAID = GetSpellInfo(3273),
+		FISHING = GetSpellInfo(7732),
 		HERBALISM = GetSpellInfo(2366),
 		LEATHERWORKING = GetSpellInfo(2108),
 		MINING = GetSpellInfo(2575),
 		SKINNING = GetSpellInfo(8613),
+		-- SMELTING = GetSpellInfo(2656),
 		TAILORING = GetSpellInfo(3908),
 	},
 }
@@ -352,6 +356,7 @@ local tabList = {
 	"Characters",
 	"Search",
 	"Guild",
+	"Agenda",
 	"Grids",
 }
 

@@ -97,6 +97,10 @@ local function AddRealm(AccountName, RealmName)
 	
 	local shouldAddCharacter = true
 	
+	if factions == 4 then
+		factions = (UnitFactionGroup("player") == "Alliance") and 1 or 2
+	end
+	
 	-- 1) Add the realm name
 	table.insert(characterList, { linetype = INFO_REALM_LINE + realmOffset,
 		account = AccountName,
@@ -110,16 +114,16 @@ local function AddRealm(AccountName, RealmName)
 		local characterLevel = DataStore:GetCharacterLevel(character)
 		local characterFaction = DataStore:GetCharacterFaction(character)
 		local _, characterClass = DataStore:GetCharacterClass(character)
-
 		
 		if (characterLevel < minLevel) then shouldAddCharacter = false end
 		if (characterLevel > maxLevel) then shouldAddCharacter = false end
-		
-		if (factions == 1) and (characterFaction ~= FACTION_ALLIANCE) then
+	
+		if (factions == 1) and (characterFaction ~= "Alliance") then
 			shouldAddCharacter = false
-		elseif (factions == 2) and (characterFaction ~= FACTION_HORDE) then
+		elseif (factions == 2) and (characterFaction ~= "Horde") then
 			shouldAddCharacter = false
 		end
+		
 		if (class ~= 0) and CLASS_SORT_ORDER[class] ~= characterClass then shouldAddCharacter = false end
 		if (tradeskill ~= 0) then 
 
@@ -142,15 +146,17 @@ local function AddRealm(AccountName, RealmName)
 				end
 
 			elseif tradeskill == firstSecondary+1 then
+				local rank = DataStore:GetFirstAidRank(character) or 0
+				if rank == 0 then
+					shouldAddCharacter = false 
+				end
+
+			elseif tradeskill == firstSecondary+2 then
 				local rank = DataStore:GetFishingRank(character) or 0
 				if rank == 0 then
 					shouldAddCharacter = false 
 				end
-            elseif tradeskill == firstSecondary+2 then
-				local rank = DataStore:GetFirstAidRank(character) or 0
-				if rank == 0 then
-					shouldAddCharacter = false 
-				end    
+
 			end
 		end
 		
@@ -209,7 +215,12 @@ local function BuildList()
 	local gold = format(GOLD_AMOUNT_TEXTURE_STRING, BreakUpLargeNumbers(floor( totalMoney / 10000 )), 13, 13)
 	local played = format("%s%sd", BreakUpLargeNumbers(floor(totalPlayed / 86400)), colors.gold)
 	
-	AltoholicTabSummary.Totals:SetText(format("%s: %s%s / %s%s / %s", L["Totals"], levels, colors.white, gold, colors.white, played))
+	local f = AltoholicTabSummary
+	
+	f.Totals:SetText(L["Totals"])
+	f.TotalLv:SetText(levels)
+	f.TotalGold:SetText(gold)
+	f.TotalPlayed:SetText(played)
 end
 
 local function AddRealmView(AccountName, RealmName)

@@ -103,6 +103,15 @@ L["COLUMN_BIDS_SUBTITLE"] = "Number of bids placed at the Auction House"
 L["COLUMN_AUCTIONHOUSE_VISITED_TITLE"] = "Last Auction House Visit"
 L["COLUMN_AUCTIONHOUSE_VISITED_TITLE_SHORT"] = "Visited"
 L["COLUMN_AUCTIONHOUSE_VISITED_SUBTITLE"] = "Last time the Auction House was visited"
+ 
+-- *** Tab Summary / Miscellaneous ***
+
+L["COLUMN_GUILD_SUBTITLE"] = "Click guild name to toggle the guild rank"
+L["COLUMN_GUILD_TITLE"] = "Guild information"
+L["COLUMN_HEARTHSTONE_TITLE"] = "Hearthstone"
+L["COLUMN_HEARTHSTONE_SUBTITLE"] = "That special place you call home"
+L["COLUMN_CLASS_SUBTITLE"] = "Character class and active specialization"
+L["COLUMN_RIDING_UPGRADEABLE"] = "This character could upgrade his riding skill"
 
 
 -- *************************
@@ -144,8 +153,14 @@ L["ACCOUNT_WIDE"] = "Account Wide"
 
 
 
+
+
+
+
+
 L["ITEM_TYPE_RECIPE"] = "Recipe"
 L["ITEM_SUBTYPE_BOOK"] = "Book"
+
 
 
 -- Note: since 2.4.004 and the support of LibBabble, certain lines are commented, but remain there for clarity (especially those concerning the menu)
@@ -157,6 +172,9 @@ L["TIME_TO_NEXT_WARNING_TOOLTIP"] = "Minimum time before you get the next mail e
 L["Uncollected resources"] = true
 L["Last collected"] = true
 L["Max. uncollected resources in"] = true
+
+
+L["Death Knight"] = true
 
 -- note: these string are the ones found in item tooltips, make sure to respect the case when translating, and to distinguish them (like crit vs spell crit)
 L["Increases healing done by up to %d+"] = true

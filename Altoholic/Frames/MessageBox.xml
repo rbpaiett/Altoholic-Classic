@@ -1,7 +1,7 @@
 <Ui xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns="http://www.blizzard.com/wow/ui/">
 	<Script file="MessageBox.lua"></Script>
 	
-	<Frame name="AltoMessageBox" toplevel="true" parent="UIParent" hidden="true">
+	<Frame name="AltoMessageBox" toplevel="true" parent="UIParent" hidden="true" inherits="BackdropTemplate">
 		<Size x="323" y="100" />
 		<Anchors>
 			<Anchor point="CENTER" x="0" y="-10" />
@@ -16,17 +16,9 @@
 				</FontString>
 			</Layer>
 		</Layers>
-		<Backdrop bgFile="Interface\DialogFrame\UI-DialogBox-Background" edgeFile="Interface\DialogFrame\UI-DialogBox-Border" tile="true">
-			<BackgroundInsets>
-				<AbsInset left="11" right="12" top="12" bottom="11" />
-			</BackgroundInsets>
-			<TileSize>
-				<AbsValue val="32" />
-			</TileSize>
-			<EdgeSize>
-				<AbsValue val="32" />
-			</EdgeSize>
-		</Backdrop>
+		<KeyValues>
+			<KeyValue key="backdropInfo" value="BACKDROP_DIALOG_32_32" type="global"/>
+		</KeyValues>
 		<Frames>
 			<Button parentKey="ButtonYes" inherits="UIPanelButtonTemplate" text="YES">
 				<Size x="109" y="24" />
@@ -52,7 +44,7 @@
 			</Button>
 		</Frames>
 		<Scripts>
-			<OnLoad>
+			<OnLoad inherit="prepend">
 				Altoholic:BindViewToController(self, "AltoholicUI.MessageBox")
 			</OnLoad>
 		</Scripts>

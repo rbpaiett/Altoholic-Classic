@@ -3,6 +3,7 @@ local addon = _G[addonName]
 local colors = addon.Colors
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
+local LibSerialize = LibStub:GetLibrary("LibSerialize")
 
 Altoholic.Sharing = {}
 Altoholic.Sharing.Clients = {}		-- authorized clients
@@ -10,6 +11,7 @@ Altoholic.Sharing.Content = {}		-- shared content
 Altoholic.Sharing.AvailableContent = {}		-- available content
 
 local THIS_ACCOUNT = "Default"
+local TOC_SEP = ";"	-- separator used between items
 
 local AUTH_AUTO	= 1
 local AUTH_ASK		= 2
@@ -147,6 +149,8 @@ local optionalModules = {		-- this defines the order in which modules should be 
 	"DataStore_Mails",
 	"DataStore_Quests",
 	"DataStore_Reputations",
+	"DataStore_Spells",
+	"DataStore_Talents",
 }
 
 local moduleLabels = {		-- these are the labels
@@ -157,11 +161,13 @@ local moduleLabels = {		-- these are the labels
 	["DataStore_Mails"] = L["Mails"],
 	["DataStore_Quests"] = L["Quests"],
 	["DataStore_Reputations"] = L["Reputations"],
+	["DataStore_Spells"] = SPELLBOOK,
+	["DataStore_Talents"] = format("%s & %s", TALENTS, GLYPHS),
 }
 
 
 local GUILD_HEADER_LINE				= 1
---local GUILD_BANKTAB_LINE			=2
+local GUILD_BANKTAB_LINE			= 2
 local CHARACTER_HEADER_LINE		= 3
 local CHARACTER_DATASTORE_LINE	= 4
 local CLASS_REFDATA_LINE			= 5		-- only for available content, not for shared content view
@@ -259,7 +265,7 @@ function Altoholic.Sharing.Content:BuildView()
 	wipe(self.view)
 	
 	local DS = DataStore
-	for realm in pairs(DS:GetRealms()) do			-- all realms on this account	
+	for realm in pairs(DS:GetRealms()) do			-- all realms on this account
 		for characterName, character in pairs(DS:GetCharacters(realm)) do
 			table.insert(self.view, { linetype = CHARACTER_HEADER_LINE, key = character } )
 			
@@ -307,7 +313,7 @@ function Altoholic.Sharing.Content:Check_OnClick(self, button)
 	local sc = Altoholic.db.global.Sharing.SharedContent
 	local index
 	
-    if line.linetype == CHARACTER_HEADER_LINE then
+	if line.linetype == CHARACTER_HEADER_LINE then
 		index = line.key
 	else
 		index = line.key .. "." .. line.module
@@ -382,7 +388,7 @@ end
 
 local TOC_SETREALM				= "1"
 local TOC_SETGUILD				= "2"
---local TOC_BANKTAB					= "3"
+local TOC_BANKTAB					= "3"
 local TOC_SETCHAR					= "4"
 local TOC_DATASTORE				= "5"
 local TOC_REFDATA					= "6"
@@ -404,39 +410,36 @@ function Altoholic.Sharing.Content:GetSourceTOC()
 	local toc = {}
 
 	for realm in pairs(DS:GetRealms()) do			-- all realms on this account
-	    table.insert(toc, format("%s|%s", TOC_SETREALM, realm))
-			
+		table.insert(toc, format("%s;%s", TOC_SETREALM, realm))
+	
 		for guildName, guild in pairs(DS:GetGuilds(realm)) do		-- add guilds
-		    if isGuildShared(realm, guildName) then
-			    table.insert(toc, format("%s|%s", TOC_SETGUILD, guildName))
+			if isGuildShared(realm, guildName) then
+				table.insert(toc, format("%s;%s", TOC_SETGUILD, guildName))
 			end
 		end
 	
 		for characterName, character in pairs(DS:GetCharacters(realm)) do
-		    if isCharacterShared(character) then
-			    -- get the size of mandatory modules
+			if isCharacterShared(character) then
+				-- get the size of mandatory modules
 				local size = 0
 				for k, module in pairs(mandatoryModules) do
-					serializedData = Altoholic:Serialize(DS:GetCharacterTable(module, characterName, realm))
+					serializedData = LibSerialize:Serialize(DS:GetCharacterTable(module, characterName, realm))
 					size = size + strlen(serializedData)
 				end
 				
 				local _, class = DS:GetCharacterClass(character)
 				lastUpdate = DS:GetModuleLastUpdate("DataStore_Characters", characterName, realm)
-				table.insert(toc, format("%s|%s|%s|%s|%s", TOC_SETCHAR, characterName, class, size, lastUpdate or 0))
+				table.insert(toc, format("%s;%s;%s;%s;%s", TOC_SETCHAR, characterName, class, size, lastUpdate or 0))
 				
-				for k, module in pairs(optionalModules) do
-
-					-- DataStore_Spells and DataStore_Talents aren't working yet
-					if (module ~= "DataStore_Spells" and module ~= "DataStore_Talents") then
-					    if isCharacterDataShared(character, module) then
-    						-- evaluate the size of transferred data
-	    					serializedData = Altoholic:Serialize(DS:GetCharacterTable(module, characterName, realm))
-		    				lastUpdate = DS:GetModuleLastUpdate(module, characterName, realm)
-					    end
+				
+				for k, module in ipairs(optionalModules) do
+					if isCharacterDataShared(character, module) then
+						-- evaluate the size of transferred data
+						serializedData = LibSerialize:Serialize(DS:GetCharacterTable(module, characterName, realm))
+						lastUpdate = DS:GetModuleLastUpdate(module, characterName, realm)
 					
-						-- only pass the key to the right datastore module (ex 4 for DataStore_Crafts)
-						table.insert(toc, format("%s|%s|%s|%s", TOC_DATASTORE, k, strlen(serializedData), lastUpdate or 0))
+						-- Pass the right datastore module (ex DataStore_Crafts)
+						table.insert(toc, format("%s;%s;%d;%d", TOC_DATASTORE, module, strlen(serializedData), lastUpdate or 0))
 					end
 				end
 			end
@@ -444,11 +447,10 @@ function Altoholic.Sharing.Content:GetSourceTOC()
 	end
 	
 	-- add reference here
-	-- whatever this is it doesn't work in classic
-	--for class, _ in pairs(DS:GetReferenceTable()) do
-	--	serializedData = Altoholic:Serialize(DS:GetClassReference(class))
-	--	table.insert(toc, format("%s|%s|%s", TOC_REFDATA, class, strlen(serializedData)))
-	--end
+	for class, _ in pairs(DS:GetReferenceTable()) do
+		serializedData = LibSerialize:Serialize(DS:GetClassReference(class))
+		table.insert(toc, format("%s;%s;%s", TOC_REFDATA, class, strlen(serializedData)))
+	end
 	
 	return toc
 end
@@ -590,7 +592,7 @@ function Altoholic.Sharing.AvailableContent:BuildView()
 	local realm, character, guildName
 	
 	for i = 1, #self.ToC do
-		local tocType, arg1, arg2, arg3, arg4 = strsplit("|", self.ToC[i])
+		local tocType, arg1, arg2, arg3, arg4 = strsplit(TOC_SEP, self.ToC[i])
 		
 		if tocType == TOC_SETREALM then
 			realm = arg1
@@ -609,7 +611,7 @@ function Altoholic.Sharing.AvailableContent:BuildView()
 				table.insert(self.view, { 
 					linetype = CHARACTER_DATASTORE_LINE, 
 					key = character, 
-					module = optionalModules[tonumber(arg1)],
+					module = arg1,
 					size = tonumber(arg2),
 					lastUpdate = tonumber(arg3),
 					parentID = i,
@@ -633,8 +635,7 @@ function Altoholic.Sharing.AvailableContent:Collapse_OnClick(self, button)
 	local line = content.view[id]
 	
 	local index
-    
-    if line.linetype == CHARACTER_HEADER_LINE then
+	if line.linetype == CHARACTER_HEADER_LINE then
 		index = line.key
 	end
 	
@@ -711,7 +712,7 @@ function Altoholic.Sharing.AvailableContent:IsItemChecked(index)
 	if self.ToC then
 		local TocData = self.ToC[index]
 		if TocData then
-			local TocType = strsplit("|", TocData)
+			local TocType = strsplit(TOC_SEP, TocData)
 					
 			if TocType == TOC_SETREALM then
 				-- until I have more time to implement a fancier solution, always return true for realm lines, necessary to correctly switch realms when importing data from foreign realms

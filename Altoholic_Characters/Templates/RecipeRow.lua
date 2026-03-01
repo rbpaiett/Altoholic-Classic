@@ -3,18 +3,30 @@ local addon = _G[addonName]
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 
 addon:Controller("AltoholicUI.RecipeRow", {
-	Update = function(frame, profession, recipeID, color, isLearned, recipeRank, totalRanks)               
+	Update = function(frame, itemID, color, isEnchanting, icon)
+		
 		-- ** set the crafted item **
-		local craftedItemID, maxMade = DataStore:GetCraftResultItem(recipeID)
+		-- local craftedItemID, maxMade = DataStore:GetCraftResultItem(itemID)
+		local maxMade = 1
 		local itemName, itemLink, itemRarity
-
-		if craftedItemID then
-			frame.CraftedItem:SetIcon(GetItemIcon(craftedItemID))
-			frame.CraftedItem.itemID = craftedItemID
+		
+		if itemID then
+			if isEnchanting then
+				frame.CraftedItem:SetIcon(icon)
+				frame.CraftedItem.spellID = itemID
+				frame.CraftedItem.itemID = nil
+				
+				itemName = GetSpellInfo(itemID)	-- itemID is actually a spellID for enchanting
+				itemRarity = 1
+			else
+				frame.CraftedItem:SetIcon(GetItemIcon(itemID))
+				frame.CraftedItem.itemID = itemID
+				frame.CraftedItem.spellID = nil
+				itemName, itemLink, itemRarity = GetItemInfo(itemID)
+			end
 			
-			itemName, itemLink, itemRarity = GetItemInfo(craftedItemID)
-			local vc = (isLearned) and 1 or 0.3
-			frame.CraftedItem.Icon:SetVertexColor(vc, vc, vc)
+			
+			frame.CraftedItem.Icon:SetVertexColor(1, 1, 1)
 			if itemRarity then
 				frame.CraftedItem:SetRarity(itemRarity)
 			end
@@ -26,26 +38,28 @@ addon:Controller("AltoholicUI.RecipeRow", {
 				frame.CraftedItem.Count:Hide()
 			end
 			frame.CraftedItem:Show()
-		elseif profession == "Enchanting" then
-            itemName = DataStore:GetResultItemName(recipeID); itemRarity = 4; maxMade = 1;
-            frame.CraftedItem:SetIcon("Interface\\Icons\\Trade_Engraving.blp")
-            frame.CraftedItem.itemID = nil
-            frame.CraftedItem.Icon:SetVertexColor(1,1,1)
-            frame.CraftedItem:SetRarity(itemRarity)
-            frame.CraftedItem.Count:Hide()
-            frame.CraftedItem:Show()
-        else
+		else
 			frame.CraftedItem:Hide()
 		end
-			
-        if itemName then
+		
+		-- ** set the recipe text **
+		local recipeText
+		
+		if itemName then
 			local _, _, _, hexColor = GetItemQualityColor(itemRarity)
 			recipeText = format("|c%s%s", hexColor, itemName)
 		end
-        frame.RecipeLink.Text:SetText(recipeText)
+	
+		frame.RecipeLink.Text:SetText(recipeText)
 		
 		-- ** set the reagents **
-		local reagents = DataStore:GetCraftReagents(recipeID)		-- reagents = "2996,2|2318,1|2320,1"
+		if isEnchanting then
+			-- enchanting reagents are stored as : ["spell:7421"] = "6217,1|10940,1|10938,1"
+			-- so convert the itemID which truly is a spellID
+			itemID = format("spell:%d", itemID)		
+		end
+			
+		local reagents = DataStore:GetCraftReagents(itemID)		-- reagents = "2996,2|2318,1|2320,1"
 		local index = 1
 		
 		if reagents then
@@ -77,5 +91,24 @@ addon:Controller("AltoholicUI.RecipeRow", {
 		end
 
 		frame:Show()
+	end,
+	
+	Link_OnEnter = function(frame)
+		-- Only for enchanting
+		local spellID = frame.CraftedItem.spellID
+		if not spellID then return end
+		
+		local name = GetSpellInfo(spellID)
+		local desc = GetSpellDescription(spellID)
+		
+		local tt = AltoTooltip
+		
+		tt:ClearLines()
+		tt:SetOwner(frame, "ANCHOR_CURSOR")
+		tt:AddLine(name, 1,1,1)
+		tt:AddLine(desc, nil, nil, nil, 1)
+
+		tt:Show()
+		
 	end,
 })

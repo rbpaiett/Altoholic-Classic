@@ -147,7 +147,7 @@ local RealmScrollFrame_Desc = {
 		},
 		[GUILD_ITEM_LINE] = {
 			GetItemData = function(self, result)		-- GetItemData..just to avoid calling it GetItemInfo
-					local name = GetItemInfo(result.id)		
+					local name = GetItemInfo(result.id)
 			
 					-- return name, source, sourceID
 					return name, colors.teal .. result.location, 0 
@@ -171,14 +171,30 @@ local RealmScrollFrame_Desc = {
 		},
 		[PLAYER_CRAFT_LINE] = {
 			GetItemData = function(self, result, line)
-					local source = addon:GetRecipeLink(result.spellID, result.professionName)
 					
-					return GetSpellInfo(result.spellID), source, line
+					-- return GetSpellInfo(result.spellID), source, line
+					
+					local isEnchanting = (result.professionName == GetSpellInfo(7411))
+					
+					if isEnchanting then
+						local source = addon:GetRecipeLink(result.spellID, result.professionName)
+						
+						return GetSpellInfo(result.spellID), source, line
+					else
+						return GetItemInfo(result.spellID), result.professionName, line
+					end
 				end,
 			GetItemTexture = function(self, result)
-					local itemID = DataStore:GetCraftResultItem(result.spellID)
-			
-					return (itemID) and GetItemIcon(itemID) or "Interface\\Icons\\Trade_Engraving"
+					-- local itemID = DataStore:GetCraftResultItem(result.spellID)
+					
+					local isEnchanting = (result.professionName == GetSpellInfo(7411))
+					
+					if isEnchanting then
+						return "Interface\\Icons\\Trade_Engraving"
+					else
+						local itemID = result.spellID
+						return (itemID) and GetItemIcon(itemID) or "Interface\\Icons\\Trade_Engraving"
+					end
 				end,
 			GetCharacter = function(self, result)
 					local character = result.char
@@ -195,9 +211,14 @@ local RealmScrollFrame_Desc = {
 				end,
 			GetItemInfo = function(self, result)
 					-- return the itemID
-					local itemID = DataStore:GetCraftResultItem(result.spellID)
+					-- local itemID = DataStore:GetCraftResultItem(result.spellID)
 					-- do not make a direct return of the result					
-					return itemID
+					-- return itemID
+					
+					local isEnchanting = (result.professionName == GetSpellInfo(7411))
+					if not isEnchanting then
+						return result.spellID
+					end
 				end,
 		},
 		[GUILD_CRAFT_LINE] = {
@@ -649,8 +670,17 @@ local function VerifyItem(item, itemCount, itemLink)
 	end
 end
 
-local function CraftMatchFound(spellID, value)
-	local name = GetSpellInfo(spellID)
+local function CraftMatchFound(spellID, value, isEnchanting)
+	local name
+	
+	if spellID then
+		if isEnchanting then
+			name = GetSpellInfo(spellID)
+		else
+			name = GetItemInfo(spellID)
+		end
+	end
+	
 	if name and string.find(strlower(name), value, 1, true) then
 		return true
 	end
@@ -665,7 +695,9 @@ local function BrowseCharacter(character)
 	local containers = DataStore:GetContainers(character)
 	if containers then
 		for containerName, container in pairs(containers) do
-			if (containerName == "Bag100") then
+			if string.sub(containerName, 1, string.len("VoidStorage")) == "VoidStorage" then
+				currentResultLocation = VOID_STORAGE
+			elseif (containerName == "Bag100") then
 				currentResultLocation = L["Bank"]
 			elseif (containerName == "Bag-2") then
 				currentResultLocation = KEYRING
@@ -683,6 +715,7 @@ local function BrowseCharacter(character)
 				
 				-- use the link before the id if there's one
 				if itemID then
+					-- VerifyItem(itemLink or itemID, itemCount, itemLink)
 					VerifyItem(itemID, itemCount, itemLink)
 				end
 			end
@@ -708,7 +741,7 @@ local function BrowseCharacter(character)
 			end
 		end
 	end
-		
+	
 	if addon:GetOption("UI.Tabs.Search.IncludeKnownRecipes")			-- check known recipes ?
 		and (filters:GetFilterValue("itemType") == nil) 
 		-- and (filters:GetFilterValue("itemSlot") == 0)				-- is now nil .. not zero anymore, keep commented for reference
@@ -718,9 +751,10 @@ local function BrowseCharacter(character)
 		if professions then
 			for professionName, profession in pairs(professions) do
 			
-				DataStore:IterateRecipes(profession, 0, 0, function(recipeData)
-					local _, spellID, isLearned = DataStore:GetRecipeInfo(recipeData)
-					if isLearned and CraftMatchFound(spellID, currentValue) then
+				local isEnchanting = (professionName == GetSpellInfo(7411))
+			
+				DataStore:IterateRecipes(profession, 0, function(color, spellID)
+					if CraftMatchFound(spellID, currentValue, isEnchanting) then
 						ns:AddResult(	{
 							linetype = PLAYER_CRAFT_LINE,
 							char = currentResultKey,
@@ -740,8 +774,10 @@ local function BrowseCharacter(character)
 end
 
 local function BrowseRealm(realm, account, bothFactions)
+	local playerFaction = UnitFactionGroup("player")
+
 	for characterName, character in pairs(DataStore:GetCharacters(realm, account)) do
-		if bothFactions or DataStore:GetCharacterFaction(character) == UnitFactionGroup("player") then
+		if bothFactions or DataStore:GetCharacterFaction(character) == playerFaction then
 			BrowseCharacter(character)
 		end
 	end
@@ -750,7 +786,7 @@ local function BrowseRealm(realm, account, bothFactions)
 		currentResultType = GUILD_ITEM_LINE
 
 		for guildName, guild in pairs(DataStore:GetGuilds(realm, account)) do
-			if bothFactions or DataStore:GetGuildBankFaction(guild) == UnitFactionGroup("player") then
+			if bothFactions or DataStore:GetGuildBankFaction(guild) == playerFaction then
 				currentResultKey = format("%s.%s.%s", account, realm, guildName)
 				
 				for tabID = 1, 8 do
@@ -875,6 +911,13 @@ function ns:FindItem(searchType, searchSubType)
 	
 	if SearchLoots then
 		addon.Tabs.Search:SetMode("loots")
+		-- if addon:GetOption("UI.Tabs.Search.SortDescending") then 		-- descending sort ?
+			-- AltoholicTabSearch.SortButtons.Sort3.ascendingSort = true		-- say it's ascending now, it will be toggled
+			-- ns:SortResults(AltoholicTabSearch.SortButtons.Sort3, "iLvl")
+		-- else
+			-- AltoholicTabSearch.SortButtons.Sort3.ascendingSort = nil
+			-- ns:SortResults(AltoholicTabSearch.SortButtons.Sort3, "iLvl")
+		-- end
 	else
 		addon.Tabs.Search:SetMode("realm")
 	end
@@ -950,6 +993,14 @@ function ns:FindEquipmentUpgrade()
 	else
 		addon.Tabs.Search:SetMode("loots")
 	end
+	
+	-- if addon:GetOption("UI.Tabs.Search.SortDescending") then 		-- descending sort ?
+		-- AltoholicTabSearch.SortButtons.Sort8.ascendingSort = true		-- say it's ascending now, it will be toggled
+		-- ns:SortResults(AltoholicTabSearch.SortButtons.Sort8, "iLvl")
+	-- else
+		-- AltoholicTabSearch.SortButtons.Sort8.ascendingSort = nil
+		-- ns:SortResults(AltoholicTabSearch.SortButtons.Sort8, "iLvl")
+	-- end
 
 	ns:Update()
 end

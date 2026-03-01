@@ -166,7 +166,7 @@ addon.Suggestions = {
 		{ 300, "bis zu 300: Sammel Pestblüte\nÖstliche & Westliche Pestländer, Teufelswald\noder Eiskappen in Winterquell" },
 	},
 	[L["Skinning"]] = {
-		{ 375, "bis zu 375: Teilen Sie Ihr gegenwärtiges Fähigkeitsniveau durch 5\nund kürschnern sie Mobs mit diesem Level" }
+		{ 300, "bis zu 300: Teilen Sie Ihr gegenwärtiges Fähigkeitsniveau durch 5\nund kürschnern sie Mobs mit diesem Level" }
 	},
 	-- source: http://www.almostgaming.com/wowguides/world-of-warcraft-lockpicking-guide
 	[L["Lockpicking"]] = {

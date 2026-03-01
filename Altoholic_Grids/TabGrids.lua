@@ -3,7 +3,7 @@ local addon = _G[addonName]
 local colors = addon.Colors
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 
-local CHARS_PER_FRAME = 10
+local CHARS_PER_FRAME = 12
 local gridCallbacks = {}
 
 addon:Controller("AltoholicUI.TabGrids", {
@@ -11,7 +11,9 @@ addon:Controller("AltoholicUI.TabGrids", {
 		frame.Label1:SetText(L["Realm"])
 		frame.Equipment.text = L["Equipment"]
 		frame.Factions.text = L["Reputations"]
-        frame.TradeSkills.text = "Trade Skills"
+		frame.Dailies.text = L["Daily Quests"]
+		frame.Attunements.text = L["Attunements"]
+		frame.Keys.text = L["Keys"]
 		
 		frame.SelectRealm:RegisterClassEvent("RealmChanged", function()
 				frame.Status:SetText("")
@@ -99,6 +101,20 @@ addon:Controller("AltoholicUI.TabGrids", {
 			frame.Factions:EnableIcon()
 		else
 			frame.Factions:DisableIcon()
+		end
+
+		if DataStore_Quests then
+			frame.Attunements:EnableIcon()
+			frame.Dailies:EnableIcon()
+		else
+			frame.Attunements:DisableIcon()
+			frame.Dailies:DisableIcon()
+		end
+		
+		if DataStore_Agenda then
+			frame.Dungeons:EnableIcon()
+		else
+			frame.Dungeons:DisableIcon()
 		end
 	end,
 	SetStatus = function(frame, text)

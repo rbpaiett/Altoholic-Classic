@@ -9,6 +9,7 @@ local MODE_SUMMARY = 1
 local MODE_BAGS = 2
 local MODE_SKILLS = 3
 local MODE_ACTIVITY = 4
+local MODE_MISCELLANEOUS = 5
 
 local SKILL_CAP = 300
 
@@ -16,9 +17,11 @@ local INFO_REALM_LINE = 0
 local INFO_CHARACTER_LINE = 1
 local INFO_TOTAL_LINE = 2
 local THIS_ACCOUNT = "Default"
+local MAX_LOGOUT_TIMESTAMP = 5000000000
 
 local VIEW_BAGS = 1
 local VIEW_QUESTS = 2
+local VIEW_TALENTS = 3
 local VIEW_AUCTIONS = 4
 local VIEW_BIDS = 5
 local VIEW_MAILS = 6
@@ -83,6 +86,22 @@ local function FormatAiL(level)
 	return format("%s%s %s%s", colors.yellow, L["COLUMN_ILEVEL_TITLE_SHORT"], colors.green, level)
 end
 
+local function FormatTexture(texture)
+	-- all textures are formatted to be 18x18 on this panel
+	return format("|T%s:18:18|t", texture)
+end
+
+local function FormatGreyIfEmpty(text, color)
+	color = color or colors.white
+		
+	if not text or text == "" then
+		text = NONE
+		color = colors.grey
+	end
+	
+	return format("%s%s", color, text)
+end
+
 local skillColors = { colors.recipeGrey, colors.red, colors.orange, colors.yellow, colors.green }
 
 local function GetSkillRankColor(rank, skillCap)
@@ -106,6 +125,7 @@ local function Tradeskill_OnEnter(frame, skillName, showRecipeStats)
 	
 	local curRank, maxRank = DataStore:GetProfessionInfo(DataStore:GetProfession(character, skillName))
 	local profession = DataStore:GetProfession(character, skillName)
+
 	local tt = AltoTooltip
 	
 	tt:ClearLines()
@@ -124,20 +144,10 @@ local function Tradeskill_OnEnter(frame, skillName, showRecipeStats)
 			end
 
 			local numCategories = DataStore:GetNumRecipeCategories(profession)
+			
 			if numCategories == 0 then
 				tt:AddLine(format("%s: 0 %s", L["No data"], TRADESKILL_SERVICE_LEARN),1,1,1)
 			else
-				for i = 1, numCategories do
-					local _, name, rank, maxRank = DataStore:GetRecipeCategoryInfo(profession, i)
-					
-					if name and rank and maxRank then
-						local color = (maxRank == 0) and colors.red or colors.green
-						tt:AddDoubleLine(name, format("%s%s|r / %s%s", color, rank, color, maxRank))
-					-- else
-						-- tt:AddLine(name)
-					end
-				end
-			
 				local orange, yellow, green, grey = DataStore:GetNumRecipesByColor(profession)
 				
 				tt:AddLine(" ")
@@ -579,7 +589,7 @@ columns["RestXP"] = {
 columns["Money"] = {
 	-- Header
 	headerWidth = 115,
-	headerLabel = L["COLUMN_MONEY_TITLE_SHORT"],
+	headerLabel = format("%s  %s", FormatTexture("Interface\\Icons\\inv_misc_coin_01"), L["COLUMN_MONEY_TITLE_SHORT"]),
 	tooltipTitle = L["COLUMN_MONEY_TITLE"],
 	tooltipSubTitle = L["COLUMN_MONEY_SUBTITLE_"..random(5)],
 	headerOnClick = function() SortView("Money") end,
@@ -680,7 +690,12 @@ columns["LastOnline"] = {
 			return format("%s%s", colors.green, GUILD_ONLINE_LABEL)
 		end
 		
-		return format("%s%s", colors.white, addon:FormatDelay(DataStore:GetLastLogout(character)))
+		local lastLogout = DataStore:GetLastLogout(character)
+		if lastLogout == MAX_LOGOUT_TIMESTAMP then
+			return UNKNOWN
+		end
+		
+		return format("%s%s", colors.white, addon:FormatDelay(lastLogout))
 	end,
 	OnEnter = function(frame)
 			local character = frame:GetParent().character
@@ -696,7 +711,13 @@ columns["LastOnline"] = {
 				text = format("%s%s", colors.green, GUILD_ONLINE_LABEL)
 			else
 				-- other player, show real time since last online
-				text = format("%s: %s", LASTONLINE, SecondsToTime(time() - DataStore:GetLastLogout(character)))
+				local lastLogout = DataStore:GetLastLogout(character)
+				
+				if lastLogout == MAX_LOGOUT_TIMESTAMP then
+					text = UNKNOWN
+				else
+					text = format("%s: %s", LASTONLINE, SecondsToTime(time() - lastLogout))
+				end
 			end
 			
 			local tt = AltoTooltip
@@ -715,7 +736,7 @@ columns["LastOnline"] = {
 columns["BagSlots"] = {
 	-- Header
 	headerWidth = 100,
-	headerLabel = L["COLUMN_BAGS_TITLE_SHORT"],
+	headerLabel = format("%s  %s", FormatTexture("Interface\\Icons\\inv_misc_bag_08"), L["COLUMN_BAGS_TITLE_SHORT"]),
 	tooltipTitle = L["COLUMN_BAGS_TITLE"],
 	tooltipSubTitle = L["COLUMN_BAGS_SUBTITLE_"..random(2)],
 	headerOnClick = function() SortView("BagSlots") end,
@@ -808,7 +829,8 @@ columns["FreeBagSlots"] = {
 columns["BankSlots"] = {
 	-- Header
 	headerWidth = 160,
-	headerLabel = L["COLUMN_BANK_TITLE_SHORT"],
+	headerLabel = format("%s  %s", FormatTexture("Interface\\Icons\\inv_box_01"), L["COLUMN_BANK_TITLE_SHORT"]),
+	-- headerLabel = L["COLUMN_BANK_TITLE_SHORT"],
 	tooltipTitle = L["COLUMN_BANK_TITLE"],
 	tooltipSubTitle = L["COLUMN_BANK_SUBTITLE_"..random(2)],
 	headerOnClick = function() SortView("BankSlots") end,
@@ -864,7 +886,7 @@ columns["BankSlots"] = {
 				if size ~= 0 then
 					tt:AddDoubleLine(FormatBagType(link, bagType), FormatBagSlots(size, free))
 				end
-			end  
+			end
 			tt:Show()
 		end,
 	GetTotal = function(line) return format("%s%s |r%s", colors.white, Characters:GetField(line, "bankSlots"), L["slots"]) end,
@@ -933,7 +955,7 @@ columns["Prof1"] = {
 			local rank, _, _, name = DataStore:GetProfession1(character)
 			local spellID = DataStore:GetProfessionSpellID(name)
 			local icon = spellID and format(TEXTURE_FONT, addon:GetSpellIcon(spellID), 18, 18) .. " " or ""
-            rank = rank or 0
+			
 			return format("%s%s%s", icon, GetSkillRankColor(rank), rank)
 		end,
 	OnEnter = function(frame)
@@ -965,7 +987,7 @@ columns["Prof2"] = {
 			local rank, _, _, name = DataStore:GetProfession2(character)
 			local spellID = DataStore:GetProfessionSpellID(name)
 			local icon = spellID and format(TEXTURE_FONT, addon:GetSpellIcon(spellID), 18, 18) .. " " or ""
-            rank = rank or 0
+			
 			return format("%s%s%s", icon, GetSkillRankColor(rank), rank)
 		end,
 	OnEnter = function(frame)
@@ -995,7 +1017,6 @@ columns["ProfCooking"] = {
 	JustifyH = "CENTER",
 	GetText = function(character)
 			local rank = DataStore:GetCookingRank(character)
-            rank = rank or 0
 			return format("%s%s", GetSkillRankColor(rank), rank)
 		end,
 	OnEnter = function(frame)
@@ -1021,7 +1042,6 @@ columns["ProfFirstAid"] = {
 	JustifyH = "CENTER",
 	GetText = function(character)
 			local rank = DataStore:GetFirstAidRank(character)
-            rank = rank or 0
 			return format("%s%s", GetSkillRankColor(rank), rank)
 		end,
 	OnEnter = function(frame)
@@ -1035,8 +1055,8 @@ columns["ProfFirstAid"] = {
 columns["ProfFishing"] = {
 	-- Header
 	headerWidth = 60,
-	headerLabel = "   " .. format(TEXTURE_FONT, addon:GetSpellIcon(7733), 18, 18),
-	tooltipTitle = GetSpellInfo(18248),
+	headerLabel = "   " .. format(TEXTURE_FONT, addon:GetSpellIcon(7732), 18, 18),
+	tooltipTitle = GetSpellInfo(7732),
 	tooltipSubTitle = nil,
 	headerOnEnter = TradeskillHeader_OnEnter,
 	headerOnClick = function() SortView("ProfFishing") end,
@@ -1047,11 +1067,10 @@ columns["ProfFishing"] = {
 	JustifyH = "CENTER",
 	GetText = function(character)
 			local rank = DataStore:GetFishingRank(character)
-            rank = rank or 0
 			return format("%s%s", GetSkillRankColor(rank), rank)
 		end,
 	OnEnter = function(frame)
-			Tradeskill_OnEnter(frame, "Fishing", true)
+			Tradeskill_OnEnter(frame, GetSpellInfo(7732), true)
 		end,
 }
 
@@ -1302,6 +1321,88 @@ columns["AHLastVisit"] = {
 		end,
 }
 
+-- ** Miscellaneous **
+columns["GuildName"] = {
+	-- Header
+	headerWidth = 120,
+	headerLabel = format("%s  %s", FormatTexture("Interface\\Icons\\inv_shirt_guildtabard_01"), GUILD),
+	tooltipTitle = L["COLUMN_GUILD_TITLE"],
+	tooltipSubTitle = L["COLUMN_GUILD_SUBTITLE"],
+	headerOnClick = function() SortView("GuildName") end,
+	headerSort = GetGuildOrRank,
+	
+	-- Content
+	Width = 120,
+	JustifyH = "CENTER",
+	GetText = function(character) 
+		local guildName, guildRank = DataStore:GetGuildInfo(character)
+		
+		if addon:GetOption("UI.Tabs.Summary.ShowGuildRank") then
+			return FormatGreyIfEmpty(guildRank)
+		else
+			return FormatGreyIfEmpty(guildName, colors.green)
+		end
+	end,
+	
+	OnClick = function(frame, button)
+			addon:ToggleOption(nil, "UI.Tabs.Summary.ShowGuildRank")
+			addon.Summary:Update()
+		end,	
+}
+
+columns["Hearthstone"] = {
+	-- Header
+	headerWidth = 120,
+	headerLabel = format("%s  %s",	FormatTexture("Interface\\Icons\\inv_misc_rune_01"), L["COLUMN_HEARTHSTONE_TITLE"]),
+	tooltipTitle = L["COLUMN_HEARTHSTONE_TITLE"],
+	tooltipSubTitle = L["COLUMN_HEARTHSTONE_SUBTITLE"],
+	headerOnClick = function() SortView("Hearthstone") end,
+	headerSort = DataStore.GetBindLocation,
+	
+	-- Content
+	Width = 120,
+	JustifyH = "CENTER",
+	GetText = function(character) 
+		return FormatGreyIfEmpty(DataStore:GetBindLocation(character))
+	end,
+}
+
+columns["ClassAndSpec"] = {
+	-- Header
+	headerWidth = 160,
+	headerLabel = format("%s   %s / %s", FormatTexture("Interface\\Addons\\Altoholic_Summary\\Textures\\Spell_Nature_NatureGuardian"), CLASS, SPECIALIZATION),
+	tooltipTitle = format("%s / %s", CLASS, SPECIALIZATION),
+	tooltipSubTitle = L["COLUMN_CLASS_SUBTITLE"],
+	headerOnClick = function() SortView("ClassAndSpec") end,
+	headerSort = DataStore.GetCharacterClass,
+	
+	-- Content
+	Width = 160,
+	JustifyH = "CENTER",
+	GetText = function(character)
+	
+		local class = DataStore:GetCharacterClass(character)
+		local spec = DataStore:GetMainSpecialization(character)
+		local color = DataStore:GetCharacterClassColor(character)
+		
+		return format("%s%s |r/ %s", color, class, FormatGreyIfEmpty(spec, color))
+	end,
+	OnClick = function(frame, button)
+			local character = frame:GetParent().character
+			if not character then return end
+
+			-- Exit if no specialization yet
+			local spec = DataStore:GetMainSpecialization(character)
+			if not spec or spec == "" or spec == NONE then return end
+
+			addon.Tabs:OnClick("Characters")
+			addon.Tabs.Characters:SetAltKey(character)
+			addon.Tabs.Characters:MenuItem_OnClick(AltoholicTabCharacters.Characters, "LeftButton")
+			addon.Tabs.Characters:ViewCharInfo(VIEW_TALENTS)
+		end,	
+}
+
+
 local function ColumnHeader_OnEnter(frame)
 	local column = frame.column
 	if not frame.column then return end		-- invalid data ? exit
@@ -1334,6 +1435,7 @@ local modes = {
 	[MODE_BAGS] = { "Name", "Level", "BagSlots", "FreeBagSlots", "BankSlots", "FreeBankSlots" },
 	[MODE_SKILLS] = { "Name", "Level", "Prof1", "Prof2", "ProfCooking", "ProfFirstAid", "ProfFishing" },
 	[MODE_ACTIVITY] = { "Name", "Level", "Mails", "LastMailCheck", "Auctions", "Bids", "AHLastVisit" },
+	[MODE_MISCELLANEOUS] = { "Name", "Level", "GuildName", "Hearthstone", "ClassAndSpec" },
 }
 
 function ns:SetMode(mode)

@@ -3,30 +3,26 @@
 	
 	<!-- Button for one talent -->
 	<Button name="AltoTalentButtonTemplate" virtual="true">
-		<Size x="26" y="26" />
+		<Size x="32" y="32" />
 		<Layers>
 			<Layer level="BACKGROUND">
 				<Texture parentKey="Icon">
-					<Size x="26" y="26"/>
+					<Size x="32" y="32"/>
 					<Anchors>
 						<Anchor point="CENTER" x="-1" y="2"/>
 					</Anchors>
 				</Texture>
 			</Layer>
-			<Layer level="ARTWORK" textureSubLevel="1">
-				<Texture parentKey="Slot" inherits="Talent-SingleBorder">
-					<Size x="26" y="26"/>
+			<Layer level="BORDER">
+				<FontString parentKey="Count" inherits="NumberFontNormal" justifyH="RIGHT" hidden="true">
 					<Anchors>
-						<Anchor point="CENTER" x="-1" y="2"/>
+						<Anchor point="BOTTOMRIGHT">
+							<Offset>
+								<AbsDimension x="-5" y="2"/>
+							</Offset>
+						</Anchor>
 					</Anchors>
-				</Texture>
-			</Layer>
-			<Layer level="OVERLAY">
-				<Texture parentKey="Border" atlas="inspect-talent-selected" useAtlasSize="true">
-					<Anchors>
-						<Anchor point="CENTER" x="-1" y="2"/>
-					</Anchors>
-				</Texture>
+				</FontString>
 			</Layer>
 		</Layers>
 		<Scripts>
@@ -34,30 +30,17 @@
 				Altoholic:BindViewToController(self, "AltoholicUI.TalentButton", "AltoholicUI.Button")
 			</OnLoad>
 			<OnEnter>
-				if not self.talentID then return end
-				
-				local link = GetTalentLink(self.talentID)
-				if not link then return end
+				if not self.talentName then return end
 				
 				AltoTooltip:ClearLines()
 				AltoTooltip:SetOwner(self, "ANCHOR_RIGHT")
-				AltoTooltip:SetHyperlink(link)
+				AltoTooltip:AddLine(self.talentName, 1, 1, 1)
+				AltoTooltip:AddLine(format("%s %d/%d", RANK, self.rank, self.maxRank), 1, 1, 1)
 				AltoTooltip:Show()
 			</OnEnter> 
 			<OnLeave>
 				AltoTooltip:Hide()
 			</OnLeave>
-			<OnClick>
-				if button ~= "LeftButton" or not IsShiftKeyDown() or not self.talentID then return end
-
-				local chat = ChatEdit_GetLastActiveWindow()
-				if not chat:IsShown() then return end
-
-				local link = GetTalentLink(self.talentID)
-				if not link then return end
-					
-				chat:Insert(link)
-			</OnClick>
 		</Scripts>
 	</Button>
 </Ui>

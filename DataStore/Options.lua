@@ -6,13 +6,17 @@ local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 
 local addonList = {
 	"DataStore",
+	"DataStore_Achievements",
 	"DataStore_Agenda",
 	"DataStore_Auctions",
 	"DataStore_Characters",
 	"DataStore_Containers",
 	"DataStore_Crafts",
+	"DataStore_Currencies",
+	"DataStore_Garrisons",
 	"DataStore_Inventory",
 	"DataStore_Mails",
+	"DataStore_Pets",
 	"DataStore_Quests",
 	"DataStore_Reputations",
 	"DataStore_Spells",
@@ -123,16 +127,28 @@ function addon:SetupInfoPanel(info, helpFrame)
 	infoText = nil
 end
 
+local altoCategory, datastoreCategory = nil, nil
 function addon:AddOptionCategory(frame, name, parent)
 	-- tiny wrapper to add categories in Blizzard's options panel
 	frame.name = name
 	frame.parent = parent
-	InterfaceOptions_AddCategory(frame)
+	if parent == nil then
+		local category, layout = Settings.RegisterCanvasLayoutCategory(frame, name)
+		if name == "Altoholic" then altoCategory = category end
+		if name == "DataStore" then datastoreCategory = category end
+		Settings.RegisterAddOnCategory(category)
+	else
+		--local category = Settings.GetCategory(parent) -- Isn't working in classic era
+		category = (parent == "Altoholic" and altoCategory) or datastoreCategory
+		local subcategory = Settings.RegisterCanvasLayoutSubcategory(category, frame, name)
+		Settings.RegisterAddOnCategory(subcategory)
+	end
+
 end
 
 function addon:SetupOptions()
 	addon:AddOptionCategory(DataStoreGeneralOptions, addonName)
-	LibStub("LibAboutPanel").new(addonName, addonName);
+	--LibStub("LibAboutPanel").new(addonName, addonName)
 	addon:AddOptionCategory(DataStoreHelp, HELP_LABEL, addonName)	-- more categories will be added as the various modules' OnEnable() get called.
 
 	addon:SetupInfoPanel(help, DataStoreHelp_Text)
@@ -140,10 +156,10 @@ function addon:SetupOptions()
 	DataStoreGeneralOptions_Title:SetText(TEAL..format("DataStore %s", DataStore.Version))
 	
 	-- manually adjust the width of a few panes, as resolution/scale may have an impact on the layout
-	local width = InterfaceOptionsFramePanelContainer:GetWidth() - 45
-	DataStoreHelp:SetWidth(width)
-	DataStoreHelp_ScrollFrame:SetWidth(width)
-	DataStoreHelp_Text:SetWidth(width-35)
+	-- local width = InterfaceOptionsFramePanelContainer:GetWidth() - 45
+	-- DataStoreHelp:SetWidth(width)
+	-- DataStoreHelp_ScrollFrame:SetWidth(width)
+	-- DataStoreHelp_Text:SetWidth(width-35)
 end
 
 function addon:ToggleOption(frame, module, option)
@@ -195,9 +211,9 @@ function addon:UpdateMemoryUsage(addons, parent, totalText)
 			totalMem = totalMem + memInKb
 			
 			if memInKb < 1024 then
-				text = format("%s%.0f %sKB", GREEN, memInKb, WHITE)
+				text = format("|r%s%.0f |r%sKB", GREEN, memInKb, WHITE)
 			else
-				text = format("%s%.2f %sMB", GREEN, memInKb/1024, WHITE)
+				text = format("|r%s%.2f |r%sMB", GREEN, memInKb/1024, WHITE)
 			end
 		else	-- module is disabled
 			text = RED..ADDON_DISABLED
@@ -220,8 +236,8 @@ local lastOptionsPanelWidth = 0
 local lastOptionsPanelHeight = 0
 
 function addon:OnUpdate(self, mandatoryResize)
-	OptionsPanelWidth = InterfaceOptionsFramePanelContainer:GetWidth()
-	OptionsPanelHeight = InterfaceOptionsFramePanelContainer:GetHeight()
+	OptionsPanelWidth = self:GetWidth()
+	OptionsPanelHeight = self:GetHeight()
 	
 	if not mandatoryResize then -- if resize is not mandatory, allow exit
 		if OptionsPanelWidth == lastOptionsPanelWidth and OptionsPanelHeight == lastOptionsPanelHeight then return end		-- no size change ? exit

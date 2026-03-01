@@ -3,7 +3,8 @@ local addon = _G[addonName]
 local colors = addon.Colors
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
--- local LibComp = LibStub:GetLibrary("LibCompress")
+local LibDeflate = LibStub:GetLibrary("LibDeflate")
+local LibSerialize = LibStub:GetLibrary("LibSerialize")
 
 Altoholic.Comm = {}
 
@@ -20,14 +21,16 @@ local MSG_ACCOUNT_SHARING_ACK					= 8	-- a simple ACK message, confirms message 
 local CMD_DATASTORE_XFER			= 100
 local CMD_DATASTORE_CHAR_XFER		= 101		-- these 2 require a special treatment
 local CMD_DATASTORE_STAT_XFER		= 102
+-- local CMD_BANKTAB_XFER				= 103
 local CMD_REFDATA_XFER				= 104
 
 
-local TOC_SEP = "|"	-- separator used between items
+local TOC_SEP = ";"	-- separator used between items
 
 -- TOC Item Types
 local TOC_SETREALM				= "1"
 local TOC_SETGUILD				= "2"
+-- local TOC_BANKTAB					= "3"
 local TOC_SETCHAR					= "4"
 local TOC_DATASTORE				= "5"
 local TOC_REFDATA					= "6"
@@ -65,41 +68,17 @@ Altoholic.Comm.Sharing.Callbacks = {
 
 	[CMD_DATASTORE_XFER] = "OnDataStoreReceived",
 	[CMD_DATASTORE_CHAR_XFER] = "OnDataStoreCharReceived",
-	[CMD_DATASTORE_STAT_XFER] = "OnDataStoreStatReceived",
 	[CMD_REFDATA_XFER] = "OnRefDataReceived",
 }
 
-local compressionMode = 1
 local importedChars
 
 local function Whisper(player, messageType, ...)
-	local serializedData = Altoholic:Serialize(messageType, ...)
-	--print("DEBUG - Sending to other player:")
-    --DEFAULT_CHAT_FRAME:AddMessage(serializedData)
-	
-	-- if compressionMode == 1 then				-- no comp
-		Altoholic:SendCommMessage("AltoShare", serializedData, "WHISPER", player)
-		
-	-- elseif compressionMode == 2 then		-- comp huff
-		-- local compData = LibComp:CompressHuffman(serializedData)
-		
-		-- local ser, comp
-		-- ser = strlen(serializedData)
-		-- comp = strlen(compData)
-		-- DEFAULT_CHAT_FRAME:AddMessage(format("Compression (%d/%d) : %2.1f", ser, comp, (comp/ser)*100))
-		
-		-- Altoholic:SendCommMessage("AltoShare", compData, "WHISPER", player)
+	local serializedData = LibSerialize:Serialize(messageType, ...)
+	local compressedData = LibDeflate:CompressDeflate(serializedData, {level = 8})
+	local encodedData = LibDeflate:EncodeForWoWAddonChannel(compressedData)
 
-	-- elseif compressionMode == 3 then		-- comp lzw
-		-- local compData = LibComp:CompressLZW(serializedData)
-		
-		-- local ser, comp
-		-- ser = strlen(serializedData)
-		-- comp = strlen(compData)
-		-- DEFAULT_CHAT_FRAME:AddMessage(format("Compression (%d/%d) : %2.1f", ser, comp, (comp/ser)*100))
-		
-		-- Altoholic:SendCommMessage("AltoShare", compData, "WHISPER", player)
-	-- end
+	Altoholic:SendCommMessage("AltoShare", encodedData, "WHISPER", player)
 end
 
 local function GetRequestee()
@@ -140,20 +119,14 @@ function Altoholic.Comm.Sharing:EmptyHandler(prefix, message, distribution, send
 end
 
 function Altoholic.Comm.Sharing:ActiveHandler(prefix, message, distribution, sender)
-	local success, msgType, msgData
-	
-	if compressionMode == 1 then	
-		success, msgType, msgData = Altoholic:Deserialize(message)
---	else
---		local decompData = LibComp:Decompress(message)
---		success, msgType, msgData = Altoholic:Deserialize(decompData)
-	end
-	
+	local decodedData = LibDeflate:DecodeForWoWAddonChannel(message)
+	local decompressedData = LibDeflate:DecompressDeflate(decodedData)
+	local success, msgType, msgData = LibSerialize:Deserialize(decompressedData)
+
 	if not success then
 		self.SharingEnabled = nil
-        print("Debug: Sharing:Activehandler(...)")
-		 self:Print(msgType)
-		 self:Print(string.sub(decompData, 1, 15))
+		-- self:Print(msgType)
+		-- self:Print(string.sub(decompData, 1, 15))
 		return
 	end
 	
@@ -181,7 +154,7 @@ function Altoholic.Comm.Sharing:Request()
 	if player then
 		self.SharingInProgress = true
 		-- AltoAccountSharing:Hide()
-		-- Altoholic:Print(format(L["Sending account sharing request to %s"], player))
+		Altoholic:Print(format(L["Sending account sharing request to %s"], player))
 		SetStatus(format("Getting table of content from %s", player))
 		Whisper(player, MSG_ACCOUNT_SHARING_REQUEST)
 	end
@@ -210,7 +183,6 @@ function Altoholic.Comm.Sharing:RequestNext(player)
 	if isChecked and index <= #self.DestTOC then
 		SetStatus(format("Transfering item %d/%d", index, #self.DestTOC ))
 		local TocData = self.DestTOC[index]
-		
 		local TocType = strsplit(TOC_SEP, TocData)
 		local _
 			
@@ -256,7 +228,7 @@ function Altoholic.Comm.Sharing:RequestNext(player)
 end
 
 local function SharingRequestReceived_Handler(self, button, sender)
-    if not button then 
+	if not button then 
 		Whisper(sender, MSG_ACCOUNT_SHARING_REFUSED)
 		return 
 	end
@@ -269,7 +241,7 @@ local AUTH_ASK		= 2
 local AUTH_NEVER	= 3
 
 function Altoholic.Comm.Sharing:OnSharingRequest(sender, data)
-    self.SharingEnabled = nil
+	self.SharingEnabled = nil
 	
 	if InCombatLockdown() then
 		-- automatically reject if requestee is in combat
@@ -393,11 +365,9 @@ function Altoholic.Comm.Sharing:OnSendItemReceived(sender, data)
 	elseif TocType == TOC_SETCHAR then		-- character ? send mandatory modules (char definition = DS_Char + DS_Stats)
 		_, self.ServerCharacterName = strsplit(TOC_SEP, TocData)
 		Whisper(self.AuthorizedRecipient, CMD_DATASTORE_CHAR_XFER, DS:GetCharacterTable("DataStore_Characters", self.ServerCharacterName, self.ServerRealmName))
-		Whisper(self.AuthorizedRecipient, CMD_DATASTORE_STAT_XFER, DS:GetCharacterTable("DataStore_Stats", self.ServerCharacterName, self.ServerRealmName))
 	
 	elseif TocType == TOC_DATASTORE then	-- DS ? Send the appropriate DS module
-		local _, moduleID = strsplit(TOC_SEP, TocData)
-		local moduleName = Altoholic.Sharing.Content:GetOptionalModuleName(tonumber(moduleID))
+		local _, moduleName = strsplit(TOC_SEP, TocData)
 		Whisper(self.AuthorizedRecipient, CMD_DATASTORE_XFER, DS:GetCharacterTable(moduleName, self.ServerCharacterName, self.ServerRealmName))
 		
 	elseif TocType == TOC_REFDATA then
@@ -426,14 +396,13 @@ end
 -- Receive content
 function Altoholic.Comm.Sharing:OnDataStoreReceived(sender, data)
 	local TocData = self.DestTOC[self.NetDestCurItem]
-	local _, moduleID = strsplit(TOC_SEP, TocData)
-	local moduleName = Altoholic.Sharing.Content:GetOptionalModuleName(tonumber(moduleID))
+	local _, moduleName = strsplit(TOC_SEP, TocData)
 	
 	DataStore:ImportData(moduleName, data, self.ClientCharName, self.ClientRealmName, self.account)
 	self:RequestNext(sender)
 end
 
-function Altoholic.Comm.Sharing:OnDataStoreCharReceived(sender, data)   
+function Altoholic.Comm.Sharing:OnDataStoreCharReceived(sender, data)
 	DataStore:ImportData("DataStore_Characters", data, self.ClientCharName, self.ClientRealmName, self.account)
 
 	-- temporarily deal with this here, will be changed when account sharing goes to  DataStore.
@@ -444,17 +413,11 @@ function Altoholic.Comm.Sharing:OnDataStoreCharReceived(sender, data)
 	importedChars[key].guild = data.guildName
 	
 	-- NO REQUEST NEXT HERE !!
-    self:RequestNext(sender)
-end
-
-function Altoholic.Comm.Sharing:OnDataStoreStatReceived(sender, data)        
-	DataStore:ImportData("DataStore_Stats", data, self.ClientCharName, self.ClientRealmName, self.account)
-	-- Request next, to resume transfer after processing mandatory data
 	self:RequestNext(sender)
 end
 
 function Altoholic.Comm.Sharing:OnRefDataReceived(sender, data)
-    local TocData = self.DestTOC[self.NetDestCurItem]
+	local TocData = self.DestTOC[self.NetDestCurItem]
 	local _, class = strsplit(TOC_SEP, TocData)
 	
 	DataStore:ImportClassReference(class, data)
@@ -464,6 +427,12 @@ end
 
 
 -- *** DataStore Event Handlers ***
+function addon:DATASTORE_GUILD_MAIL_RECEIVED(event, sender, recipient)
+	if addon:GetOption("UI.Mail.GuildMailWarning") then
+		addon:Print(format(L["%s|r has received a mail from %s"], format("%s%s", colors.green, recipient), format("%s%s", colors.green, sender)))
+	end
+end
+
 function addon:DATASTORE_GLOBAL_MAIL_EXPIRY(event, threshold)
 	-- at least one mail has expired
 	
@@ -504,4 +473,10 @@ end
 function addon:DATASTORE_CS_TIMEGAP_FOUND(event, clientServerTimeGap)
 	-- once the Client-Server time gap is known, check for expiries every 60 seconds
 	addon:ScheduleRepeatingTimer(addon.Events.CheckExpiries, 60)
+end
+
+function addon:DATASTORE_GUILD_LEFT(event)
+	if addon.Summary then
+		addon.Summary:Update()
+	end
 end

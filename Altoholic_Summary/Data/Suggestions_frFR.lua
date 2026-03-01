@@ -167,7 +167,7 @@ addon.Suggestions = {
 		{ 300, "Atteindre 300: Collecter de la Fleur de peste\nMaleterres (Est et Ouest), Gangrebois\nou Calot de glace au Berceau-de-l'hiver" },
 	},
 	[L["Skinning"]] = {
-		{ 375, "Atteindre 375: Diviser le niveau actuel de d\195\169pe\185\167age par 5,\net tuer les monstres d\195\169pe\185\167ables du niveau obtenu" }
+		{ 300, "Atteindre 300: Diviser le niveau actuel de d\195\169pe\185\167age par 5,\net tuer les monstres d\195\169pe\185\167ables du niveau obtenu" }
 	},
 	-- source: http://www.almostgaming.com/wowguide...kpicking-guide
 	[L["Lockpicking"]] = {

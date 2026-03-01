@@ -191,6 +191,20 @@ L["COLOR_GREY"] = "Grey"
 L["COLOR_ORANGE"] = "Orange"
 L["COLOR_RED"] = "Red"
 L["COLOR_YELLOW"] = "Yellow"
+L["COLUMN_ARTIFACT_KNOWLEDGE_SUBTITLE"] = "Bonus per level"
+L["COLUMN_ARTIFACT_KNOWLEDGE_TITLE"] = "Artifact Knowledge"
+L["COLUMN_ARTIFACT_KNOWLEDGE_TITLE_SHORT"] = "Knowledge"
+L["COLUMN_ARTIFACT_POWER_SUBTITLE"] = "Cost per level"
+L["COLUMN_ARTIFACT_POWER_TITLE"] = "Artifact Power"
+L["COLUMN_ARTIFACT_POWER_TITLE_SHORT"] = "Power"
+L["COLUMN_ARTIFACT_RANK_SUBTITLE"] = "Total artifact ranks purchased"
+L["COLUMN_ARTIFACT_RANK_TITLE"] = "Artifact Rank"
+L["COLUMN_ARTIFACT_RANK_TITLE_SHORT"] = "Rank"
+L["COLUMN_ARTIFACT_RESEARCH_DETAIL_1"] = "At least one note is ready for pickup"
+L["COLUMN_ARTIFACT_RESEARCH_DETAIL_2"] = "All notes are ready for pickup"
+L["COLUMN_ARTIFACT_RESEARCH_SUBTITLE"] = "Time until the next note is ready"
+L["COLUMN_ARTIFACT_RESEARCH_TITLE"] = "Artifact Research Notes"
+L["COLUMN_ARTIFACT_RESEARCH_TITLE_SHORT"] = "Next Research"
 L["COLUMN_AUCTIONHOUSE_VISITED_SUBTITLE"] = "Last time the Auction House was visited"
 L["COLUMN_AUCTIONHOUSE_VISITED_TITLE"] = "Last Auction House Visit"
 L["COLUMN_AUCTIONHOUSE_VISITED_TITLE_SHORT"] = "Visited"
@@ -808,3 +822,15 @@ L[ [=[Your confirmation will still be required any time someone requests your in
 L["Zelemar the Wrathful"] = true
 L["Zone"] = true
 
+
+L["COLUMN_GUILD_SUBTITLE"] = "Click guild name to toggle the guild rank"
+L["COLUMN_GUILD_TITLE"] = "Guild information"
+L["COLUMN_HEARTHSTONE_TITLE"] = "Hearthstone"
+L["COLUMN_HEARTHSTONE_SUBTITLE"] = "That special place you call home"
+L["COLUMN_CLASS_SUBTITLE"] = "Character class and active specialization"
+L["COLUMN_RIDING_UPGRADEABLE"] = "This character could upgrade his riding skill"
+
+L["Daily Quests"] = true
+L["Attunements"] = true
+L["Keys"] = true
+L["This faction"] = true

@@ -15,9 +15,9 @@ local addonList = {
 	"Altoholic_Grids",
 }
 
-local url1 = "https://www.curseforge.com/wow/addons/altoholic/" 
-local url2 = "https://github.com/teelolws/Altoholic-Classic" 
-local url3 = "http://wow.curseforge.com/addons/altoholic/localization/"
+local url1 = "https://www.curseforge.com/wow/addons/altoholic"
+local url2 = "https://www.wowinterface.com/downloads/info8533-Altoholic.html"
+local url3 = "https://www.curseforge.com/wow/addons/altoholic/localization"
 
 local help = {
 	{	name = "General",
@@ -61,7 +61,7 @@ local help = {
 			"Do I have to open all professions manually?",
 		},
 		answers = {
-			"Yes. On Classic, only your gathering professions and Fishing can be scanned when you login. You will need to open the crafting windows for all other professions.",
+			"Yes. Some advanced features require that you open the tradeskill pane once per profession.",
 		}
 	},
 	{	name = "Mails",
@@ -95,10 +95,10 @@ local support = {
 			"I have multiple Lua errors at login, should I report them all?",
 		},
 		answers = {
- 			format("%s%s", "Please use the Issue Tracker on Github: ", colors.green..url2), 
+			"Both Curse and WoWInterface have a ticket section, I also read comments and respond as often as I materially can, so feel free to report in one of these places.",
 			format("%s\n\n%s\n%s\n%s\n%s\n%s\n", 
 				"A few things:",
- 				colors.green.."1)|r Make sure you have the latest version of the add-on. Check for alpha builds on Github that address your issue.\n", 
+				colors.green.."1)|r Make sure you have the latest version of the add-on.\n",
 				colors.green.."2)|r If you suspect a conflict with another add-on, try to reproduce the issue with only Altoholic enabled. As the add-on deals with a lot of things, a conflict is always possible.\n",
 				colors.green.."3)|r Make sure your issue has not been reported by someone else.\n",
 				colors.green.."4)|r Never, ever, report that 'it does not work', this is the most useless sentence in the world! Be specific about what does not work.\n",
@@ -120,9 +120,109 @@ local support = {
 
 -- this content will be subject to frequent changes, do not bother translating it !!
 local whatsnew = {
-	{	name = "Classic version",
+	{	name = "1.13.011 Changes",
 		bulletedList = {
-			"Fixes and code clean up for classic version.",
+			"DataStore_Crafts : fixed the color of enchanting recipes in the skill panel, which were all displayed as orange.",
+			"You must reload the profession once to fix the database entries.",
+			"Fixed the enchanting profession in the character's tab. Filtering by enchant name now also working.",
+		},
+	},
+	{	name = "1.13.010 Changes",
+		bulletedList = {
+			"Fixed a profession scanning issue where recipes of one profession could be stored into another profession.",
+			"If you were affected by this, just reopen your professions once.",
+		},
+	},
+	{	name = "1.13.009 Changes",
+		bulletedList = {
+			"Removed the debug text displayed when opening a craft window. Sorry about this one.",
+			"Added tracking for raid encounter kills. Note that bosses killed were just saved in the previous version, but in an improper format.",
+			"Be sure to reload alts with raid id's (it only affects the agenda tab, but you will get an error when mousing over raids of alts you have not reloaded).",
+			"Fixed a lua error when opening the 'Beast Training' window.",
+			"[frFR] fixed problems related to 'Secourisme/Premiers soins'",
+			"Fixed multiple minor issues related to professions.",
+			"Fixed searching profession recipes.",
+		},
+	},
+	{	name = "1.13.008 Changes",
+		bulletedList = {
+			"Fixed Enchanting",
+			"Summary Tab - Miscellaneous : Fixed guild info not properly reset when leaving a guild",
+			"Summary Tab - Added a faction filter for 'this faction'",
+			"Fixed a Search issue related to the localized faction name. enUS & frFR clients were not affected, but most likely all other locales were.",
+		},
+	},
+	{	name = "1.13.007 Changes",
+		bulletedList = {
+			"Fixed profession cooldowns not properly updating the agenda.",
+			"Fixed a localization issue in DataStore_Crafts that impacted non-enUS clients.",
+		},
+	},
+	{	name = "1.13.006 Changes",
+		bulletedList = {
+			"Fixed a Lua error in the date service, triggering a problem in the Agenda Tab.",
+			"DataStore_Talents : fixed an issue when scanning talents.",
+			"DataStore_Talents : fixed an issue checking the specialization of a low level alt.",
+			"Agenda Tab : fixed reporting of professions cooldowns, and some refresh issues.",
+			"Added tracking of the salt shaker cooldown.",
+			"Fixed multiple issues with account sharing, it should now work without problems.",
+			"Added support for LibDeflate, data transferred using the account sharing feature is now compressed, and the whole process is now much faster.",
+			"Note that data transfer is still throttled, while the whole process will be 3-4 times faster than it was, it will never be lightning fast.",
+		},
+	},
+	{	name = "1.13.005 Changes",
+		bulletedList = {
+			"Fixed a Lua error when mousing over some recipes.",
+			"Fixed a Lua error in the event management.",
+			"Fixed professions cooldowns.",
+			"DataStore_Talents : fixed an issue that could cause account sharing not to work properly.",
+			"DataStore_Inventory : fixed a potential division by zero when scanning the inventory of a naked alt (Thanks qwarlocknew for finding this one !).",
+			"Fixed the recipe tooltips : the 'already know by' information is now correct.",
+		},
+	},
+	{	name = "1.13.004 Changes",
+		bulletedList = {
+			"Agenda Tab : Fixed a Lua error using C_Calendar.",
+			"The account sharing functionality has been reactivated. I could not test it extensively, please report if you have problems.",
+			"DataStore_Crafts : Added support for the localized profession names which may not be unique in some regions.",
+		},
+	},
+	{	name = "1.13.003 Changes",
+		bulletedList = {
+			"Summary Tab : fixed the tooltip of tradeskills, where the amount of recipes was improperly reported.",
+			"Search Tab : fixed a Lua error preventing all searches.",
+		},
+	},
+	{	name = "1.13.002 Changes",
+		bulletedList = {
+			"Release Candidate - not released publically.",
+			"Summary Tab : added the miscellaneous menu item, as on retail.",
+			"Characters Tab : talent trees are now working.",
+			"Agenda Tab : is now working.",
+			"Grids Tab : Fixed a few Lua errors, and added missing icons for the reputations.",
+			"Grids Tab : added a panel for the raid attunements.",
+			"Grids Tab : added a panel for keys and key-like items (ex: Scepter of Celebras), with the dungeon to which they are related and the appropriate level.",
+		},
+	},
+	{	name = "1.13.001 Changes",
+		bulletedList = {
+			"Altoholic Summary : should be working fine, but limited to 'account summary', 'bags', 'skills', 'activity'",
+			"Altoholic Characters : should be working fine, except for the talents.",
+			"Altoholic Search : should be working fine",
+			"Altoholic Guild : should be working fine, but only contains the 'guild' and not the 'guild bank' since it did not exist in classic.",
+			"Altoholic Agenda : NOT WORKING, you should disable DataStore_Agenda.",
+			"Altoholic Grids : should be working fine, but limited to 'Equipment', 'Reputations', 'Daily Quests', 'Tradeskills'",
+			"	Reputations used to get their icons from the related achievements, which do not exist in Classic, so icons are bad/missing.",
+
+			"DataStore_Achievements + Currencies + Garrisons + Pets : not supported at all in Classic.",
+			"DataStore_Agenda + Stats + Talents : are provided as-is, they need to be adapted for Classic, they should be DISABLED in the addon list.",
+			"Other DataStore modules : should be working fine.",
+			"Added the sell price of items in the tooltip, and an option to show/hide it.",
+		},
+	},
+	{	name = "Earlier changes",
+		textLines = {
+			"Refer to |cFF00FF00changelog.txt",
 		},
 	},
 }
@@ -155,7 +255,7 @@ function addon:SetupOptions()
 	-- create categories in Blizzard's options panel
 	
 	DataStore:AddOptionCategory(AltoholicGeneralOptions, addonName)
-	LibStub("LibAboutPanel").new(addonName, addonName);
+	--LibStub("LibAboutPanel").new(addonName, addonName);
 	DataStore:AddOptionCategory(AltoholicHelp, HELP_LABEL, addonName)
 	DataStore:AddOptionCategory(AltoholicSupport, "Getting support", addonName)
 	DataStore:AddOptionCategory(AltoholicWhatsNew, "What's new?", addonName)
@@ -305,6 +405,7 @@ function addon:SetupOptions()
 	f.ShowItemCount.Text:SetText(L["Show item count per character"])
 	f.ShowSimpleCount.Text:SetText(L["Show item count without details"])
 	f.ShowTotalItemCount.Text:SetText(L["Show total item count"])
+	f.ShowItemSellPrice.Text:SetText("Show item sell price")
 	f.ShowKnownRecipes.Text:SetText(L["Show recipes already known/learnable by"])
 	f.ShowItemID.Text:SetText(L["Show item ID and item level"])
 	f.ShowGatheringNodesCount.Text:SetText(L["Show counters on gathering nodes"])
@@ -391,7 +492,6 @@ function addon:RestoreOptionsToUI()
 	f.ShowItemSource:SetChecked(O["UI.Tooltip.ShowItemSource"])
 	f.ShowItemCount:SetChecked(O["UI.Tooltip.ShowItemCount"])
 	f.ShowTotalItemCount:SetChecked(O["UI.Tooltip.ShowTotalItemCount"])
-    f.ShowItemSellPrice.Text:SetText("Show item sell price")
 	f.ShowKnownRecipes:SetChecked(O["UI.Tooltip.ShowKnownRecipes"])
 	f.ShowItemID:SetChecked(O["UI.Tooltip.ShowItemID"])
 	f.ShowGatheringNodesCount:SetChecked(O["UI.Tooltip.ShowGatheringNodesCount"])
@@ -431,8 +531,8 @@ local lastOptionsPanelWidth = 0
 local lastOptionsPanelHeight = 0
 
 function addon:OnUpdate(self, mandatoryResize)
-	OptionsPanelWidth = InterfaceOptionsFramePanelContainer:GetWidth()
-	OptionsPanelHeight = InterfaceOptionsFramePanelContainer:GetHeight()
+	OptionsPanelWidth = SettingsPanel.Container.SettingsCanvas:GetWidth()
+	OptionsPanelHeight = SettingsPanel.Container.SettingsCanvas:GetHeight()
 	
 	if not mandatoryResize then -- if resize is not mandatory, allow exit
 		if OptionsPanelWidth == lastOptionsPanelWidth and OptionsPanelHeight == lastOptionsPanelHeight then return end		-- no size change ? exit

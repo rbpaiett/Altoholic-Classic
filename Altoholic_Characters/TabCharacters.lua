@@ -8,6 +8,7 @@ local parentName = "AltoholicTabCharacters"
 local parent
 
 local currentView = 0		-- current view in the characters category
+local currentSpellTab
 local currentProfession			-- currently selected profession
 local currentMenuProfession	-- profession currently being navigated in the DDM
 
@@ -16,7 +17,7 @@ local currentAccount = THIS_ACCOUNT
 local currentRealm = GetRealmName()
 local currentAlt = UnitName("player")
 
-local SKILL_ANY = 4
+local SKILL_ANY = 0
 
 -- ** Icons Menus **
 local VIEW_BAGS = 1
@@ -97,7 +98,7 @@ function ns:MenuItem_OnClick(frame, button)
 	menuIcons.TalentsIcon:Show()
 	menuIcons.AuctionIcon:Show()
 	menuIcons.MailIcon:Show()
---	menuIcons.SpellbookIcon:Show()
+	menuIcons.SpellbookIcon:Show()
 	menuIcons.ProfessionsIcon:Show()
 end
 
@@ -237,13 +238,14 @@ local function OnCharacterChange(self)
 	EnableIcon(menuIcons.TalentsIcon)
 	EnableIcon(menuIcons.AuctionIcon)
 	EnableIcon(menuIcons.MailIcon)
---	EnableIcon(menuIcons.SpellbookIcon)
+	EnableIcon(menuIcons.SpellbookIcon)
 	EnableIcon(menuIcons.ProfessionsIcon)
 	
 	DropDownList1:Hide()
 	
 	if (not oldAlt) or (oldAlt == newAlt) then return end
 
+	currentSpellTab = nil
 	currentProfession = nil
 	
 	if currentView ~= VIEW_SPELLS and currentView ~= VIEW_PROFESSION then
@@ -259,7 +261,7 @@ local function OnContainerChange(self)
 		addon:ToggleOption(nil, "UI.Tabs.Characters.ViewBags")
 	elseif self.value == 2 then
 		addon:ToggleOption(nil, "UI.Tabs.Characters.ViewBank")
-	elseif self.value == 5 then
+	elseif self.value == 3 then
 		addon:ToggleOption(nil, "UI.Tabs.Characters.ViewBagsAllInOne")
 	end
 	
@@ -287,6 +289,7 @@ local function OnSpellTabChange(self)
 	CloseDropDownMenus()
 	
 	if self.value then
+		currentSpellTab = self.value
 		AltoholicTabCharacters.Spellbook:SetSchool(self.value)
 		ns:ViewCharInfo(VIEW_SPELLS)
 	end
@@ -443,7 +446,7 @@ local function BagsIcon_Initialize(self, level)
 	DDM_Add(L["View"], nil, function() ns:ViewCharInfo(VIEW_BAGS) end)
 	DDM_Add(L["Bags"], 1, OnContainerChange, nil, addon:GetOption("UI.Tabs.Characters.ViewBags"))
 	DDM_Add(L["Bank"], 2, OnContainerChange, nil, addon:GetOption("UI.Tabs.Characters.ViewBank"))
-	DDM_Add(L["All-in-one"], 5, OnContainerChange, nil, addon:GetOption("UI.Tabs.Characters.ViewBagsAllInOne"))
+	DDM_Add(L["All-in-one"], 3, OnContainerChange, nil, addon:GetOption("UI.Tabs.Characters.ViewBagsAllInOne"))
 		
 	DDM_AddTitle(" ")
 	DDM_AddTitle("|r" ..RARITY)
@@ -482,7 +485,7 @@ local function QuestsIcon_Initialize(self, level)
 	DDM_AddTitle("|r ")
 	DDM_AddTitle(GAMEOPTIONS_MENU)
 	if DataStore_Quests then
-		DDM_Add("DataStore Quests", nil, function() Altoholic:ToggleUI(); InterfaceOptionsFrame_OpenToCategory("DataStore_Quests") end)
+		DDM_Add("DataStore Quests", nil, function() Altoholic:ToggleUI(); Settings.OpenToCategory("DataStore_Quests") end)
 	end
 	DDM_AddCloseMenu()
 end
@@ -526,7 +529,7 @@ local function AuctionIcon_Initialize(self, level)
 	DDM_AddTitle("|r ")
 	DDM_AddTitle(GAMEOPTIONS_MENU)
 	if DataStore_Auctions then
-		DDM_Add("DataStore Auctions", nil, function() Altoholic:ToggleUI(); InterfaceOptionsFrame_OpenToCategory("DataStore_Auctions") end)
+		DDM_Add("DataStore Auctions", nil, function() Altoholic:ToggleUI(); Settings.OpenToCategory("DataStore_Auctions") end)
 	end
 	DDM_AddCloseMenu()
 end
@@ -548,9 +551,9 @@ local function MailIcon_Initialize(self, level)
 	DDM_Add(colors.white .. L["Clear all entries"], nil, OnClearMailboxEntries)
 	DDM_AddTitle("|r ")
 	DDM_AddTitle(GAMEOPTIONS_MENU)
-	DDM_Add(MAIL_LABEL, nil, function() Altoholic:ToggleUI(); InterfaceOptionsFrame_OpenToCategory(AltoholicMailOptions) end)
+	DDM_Add(MAIL_LABEL, nil, function() Altoholic:ToggleUI(); Settings.OpenToCategory(AltoholicMailOptions) end)
 	if DataStore_Mails then
-		DDM_Add("DataStore Mails", nil, function() Altoholic:ToggleUI(); InterfaceOptionsFrame_OpenToCategory(DataStoreMailOptions) end)
+		DDM_Add("DataStore Mails", nil, function() Altoholic:ToggleUI(); Settings.OpenToCategory(DataStoreMailOptions) end)
 	end
 	
 	DDM_AddCloseMenu()
@@ -561,9 +564,9 @@ local function SpellbookIcon_Initialize(self, level)
 	if not currentCharacterKey then return end
 	
 	DDM_AddTitle(format("%s / %s", SPELLBOOK, DataStore:GetColoredCharacterName(currentCharacterKey)))
-	                                                     
+	
 	for index, spellTab in ipairs(DataStore:GetSpellTabs(currentCharacterKey)) do
-		DDM_Add(spellTab, spellTab, OnSpellTabChange)
+		DDM_Add(spellTab, spellTab, OnSpellTabChange, nil, (currentSpellTab == spellTab))
 	end
 	
 	DDM_AddCloseMenu()
@@ -599,22 +602,24 @@ local function ProfessionsIcon_Initialize(self, level)
 			DDM_Add(format("%s%s", colors.grey, PROFESSIONS_COOKING), nil, nil)
 		end
 		
-        -- First Aid
+		-- First Aid
 		rank = DataStore:GetFirstAidRank(currentCharacterKey)
 		if last and rank then
 			local info = UIDropDownMenu_CreateInfo()
+			local firstAidLabel = GetSpellInfo(3273)
 			
-			info.text = format("%s %s(%s)", PROFESSIONS_FIRST_AID, colors.green, rank )
+			info.text = format("%s %s(%s)", firstAidLabel, colors.green, rank )
 			info.hasArrow = 1
-			info.checked = (PROFESSIONS_FIRST_AID == (currentProfession or ""))
-			info.value = PROFESSIONS_FIRST_AID
+			info.checked = (firstAidLabel == (currentProfession or ""))
+			info.value = firstAidLabel
 			info.func = OnProfessionChange
 			UIDropDownMenu_AddButton(info, level)
 			
 		else
-			DDM_Add(format("%s%s", colors.grey, PROFESSIONS_FIRST_AID), nil, nil)
-		end	
-        
+			DDM_Add(format("%s%s", colors.grey, firstAidLabel), nil, nil)
+		end		
+		
+		
 		-- Profession 1
 		rank, _, _, professionName = DataStore:GetProfession1(currentCharacterKey)
 		if last and rank and professionName then
@@ -678,7 +683,7 @@ local function ProfessionsIcon_Initialize(self, level)
 		local info = UIDropDownMenu_CreateInfo()
 
 		if UIDROPDOWNMENU_MENU_VALUE == "colors" then
-			for index = 0, 3 do 
+			for index = 1, 4 do 
 				info.text = recipes:GetRecipeColorName(index)
 				info.value = index
 				info.checked = (recipes:GetCurrentColor() == index)
@@ -702,9 +707,8 @@ local function ProfessionsIcon_Initialize(self, level)
 			local invSlots = {}
 			local profession = DataStore:GetProfession(currentCharacterKey, currentProfession)
 			
-			DataStore:IterateRecipes(profession, 0, 0, function(recipeData)
-				local color, recipeID = DataStore:GetRecipeInfo(recipeData)
-				local itemID = DataStore:GetCraftResultItem(recipeID)
+			DataStore:IterateRecipes(profession, 0, function(color, itemID, index) 
+			
 				if not itemID then return end
 					
 				local _, _, _, _, _, itemType, _, _, itemEquipLoc = GetItemInfo(itemID)
@@ -736,16 +740,17 @@ local function ProfessionsIcon_Initialize(self, level)
 			local profession = DataStore:GetProfession(currentCharacterKey, UIDROPDOWNMENU_MENU_VALUE)
 			
 			for index = 1, DataStore:GetNumRecipeCategories(profession) do
-				local categoryID, name = DataStore:GetRecipeCategoryInfo(profession, index)
+				local name = DataStore:GetRecipeCategoryInfo(profession, index)
 				
 				info.text = name
 				info.value = format("%s,%d", UIDROPDOWNMENU_MENU_VALUE, index)		-- "Tailoring,1"
-				info.checked = ((recipes:GetCurrentProfession() == UIDROPDOWNMENU_MENU_VALUE) and (recipes:GetMainCategory() == index))
+				-- info.checked = ((recipes:GetCurrentProfession() == UIDROPDOWNMENU_MENU_VALUE) and (recipes:GetMainCategory() == index))
+				info.checked = false
 				info.func = OnProfessionCategoryChange
 				UIDropDownMenu_AddButton(info, level)	
 			end
 		end
-    end
+	end
 end
 
 local menuIconCallbacks = {
@@ -780,7 +785,7 @@ function ns:OnLoad()
 	local bagIcon = ICON_VIEW_BAGS
 
 	-- bag icon gets better with more chars at lv max
-	local LVMax = 60
+	local LVMax = 110
 	local numLvMax = 0
 	for _, character in pairs(DataStore:GetCharacters()) do
 		if DataStore:GetCharacterLevel(character) >= LVMax then
@@ -799,6 +804,7 @@ function ns:OnLoad()
 	local menuIcons = parent.MenuIcons
 	menuIcons.CharactersIcon.Icon:SetTexture(addon:GetCharacterIcon())
 	menuIcons.BagsIcon.Icon:SetTexture(bagIcon)
+	menuIcons.QuestsIcon.Icon:SetTexCoord(0, 0.75, 0, 0.75)
 	
 	addon:RegisterMessage("DATASTORE_RECIPES_SCANNED")
 	addon:RegisterMessage("DATASTORE_QUESTLOG_SCANNED")

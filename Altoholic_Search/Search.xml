@@ -82,7 +82,11 @@
 						local result = Altoholic.Search:GetResult(id)
 						
 						if result.linetype == 3 then
-							link = Altoholic:GetRecipeLink(result.spellID, result.professionName)
+							local isEnchanting = (result.professionName == GetSpellInfo(7411))
+							
+							if isEnchanting then
+								link = Altoholic:GetRecipeLink(result.spellID, result.professionName)
+							end
 						elseif result.linetype == 4 then
 							local LTL = LibStub("LibTradeLinks-1.0")
 							link = Altoholic:GetRecipeLink(result.spellID, LTL:GetSkillName(result.skillID))

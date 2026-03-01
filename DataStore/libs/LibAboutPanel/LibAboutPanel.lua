@@ -11,7 +11,6 @@ Author: Tekkub, Ackis
 ****************************************************************************************
 
 ]] --
-
 local lib, oldminor = LibStub:NewLibrary("LibAboutPanel", 3)
 if not lib then return end
 
@@ -87,7 +86,9 @@ function lib.new(parent, addonname)
 	frame.name, frame.parent, frame.addonname = not parent and gsub(addonname, " ", "") or L["About"], parent, gsub(addonname, " ", "") -- Remove spaces from addonname because GetMetadata doesn't like that
 	frame:Hide()
 	frame:SetScript("OnShow", lib.OnShow)
-	InterfaceOptions_AddCategory(frame)
+	local category, layout = Settings.RegisterCanvasLayoutCategory(frame, addonname);
+	Settings.RegisterAddOnCategory(category);
+
 	return frame
 end
 

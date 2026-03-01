@@ -30,7 +30,7 @@ local function GetEventExpiry(event)
 
 	local gap = 0
 	if DataStore_Agenda then
-		gap = DataStore:GetClientServerTimeGap()
+		gap = DataStore:GetClientServerTimeGap() or 0
 	end
 	
 	return difftime(time(timeTable), time() + gap)	-- in seconds
@@ -136,23 +136,23 @@ local eventTypes = {
 	[TIMER_LINE] = {
 		GetReadyNowWarning = function(self, event)
 				local character = DataStore:GetCharacter(event.char, event.realm)
-				local item = DataStore:GetItemCooldownInfo(character, event.parentID)
+				local item = GetItemInfo(event.parentID)
 				if item then
 					return format(L["%s is now ready (%s on %s)"], item, event.char, event.realm)
 				end
 			end,
 		GetReadySoonWarning = function(self, event, minutes)
 				local character = DataStore:GetCharacter(event.char, event.realm)
-				local item = DataStore:GetItemCooldownInfo(character, event.parentID)
+				local item = GetItemInfo(event.parentID)
 				if item then
 					return format(L["%s will be ready in %d minutes (%s on %s)"], item, minutes, event.char, event.realm)
 				end
 			end,
 		GetInfo = function(self, event)
 				local character = DataStore:GetCharacter(event.char, event.realm)
-				local item = DataStore:GetItemCooldownInfo(character, event.parentID)
+				local item = GetItemInfo(event.parentID)
 				local expiresIn = GetEventExpiry(event)
-				return title, format("%s %s", COOLDOWN_REMAINING, Altoholic:GetTimeString(expiresIn))
+				return item, format("%s %s", COOLDOWN_REMAINING, Altoholic:GetTimeString(expiresIn))
 			end,
 	},
 	[SHARED_CD_LINE] = {
@@ -170,13 +170,14 @@ local eventTypes = {
 }
 
 -- *** Utility functions ***
-local function AddEvent(eventType, eventDate, eventTime, char, realm, index, externalTable)
+local function AddEvent(eventType, eventDate, eventTime, char, realm, account, index, externalTable)
 	table.insert(eventList, {
 		eventType = eventType, 
 		eventDate = eventDate, 
 		eventTime = eventTime, 
 		char = char,
 		realm = realm,
+		account = account,
 		parentID = index,
 		source = externalTable})
 end
@@ -195,40 +196,33 @@ end
 
 local function ClearExpiredEvents()
 	
-	for realm in pairs(DataStore:GetRealms()) do
-		for characterName, character in pairs(DataStore:GetCharacters(realm)) do
-
-			-- Profession Cooldowns
-			local professions = DataStore:GetProfessions(character)
-			if professions then
-				for professionName, profession in pairs(professions) do
-					DataStore:ClearExpiredCooldowns(profession)
-				end
-			end
-			
-			-- Saved Instances
-			local dungeons = DataStore:GetSavedInstances(character)
-			if dungeons then
-				for key, _ in pairs(dungeons) do
-					if DataStore:HasSavedInstanceExpired(character, key) then
-						DataStore:DeleteSavedInstance(character, key)
+	for account in pairs(DataStore:GetAccounts()) do
+		for realm in pairs(DataStore:GetRealms(account)) do
+			for characterName, character in pairs(DataStore:GetCharacters(realm, account)) do
+				-- Profession Cooldowns
+				local professions = DataStore:GetProfessions(character)
+				if professions then
+					for professionName, profession in pairs(professions) do
+						DataStore:ClearExpiredCooldowns(profession)
 					end
 				end
-			end
-			
-			-- Other timers (like mysterious egg, etc..)
-			local num = DataStore:GetNumItemCooldowns(character) or 0
-			for i = 1, num do
-				if DataStore:HasItemCooldownExpired(character, i) then
-					DataStore:DeleteItemCooldown(character, i)
+				
+				-- Saved Instances
+				local dungeons = DataStore:GetSavedInstances(character)
+				if dungeons then
+					for key, _ in pairs(dungeons) do
+						if DataStore:HasSavedInstanceExpired(character, key) then
+							DataStore:DeleteSavedInstance(character, key)
+						end
+					end
 				end
-			end
-			
-			-- Calendar events 
-			num = DataStore:GetNumCalendarEvents(character) or 0 
-			for i = 1, num do
-				if DataStore:HasCalendarEventExpired(character, i) then
-					DataStore:DeleteCalendarEvent(character, i)
+				
+				-- Calendar events 
+				local num = DataStore:GetNumCalendarEvents(character) or 0 
+				for i = num, 1, -1 do
+					if DataStore:HasCalendarEventExpired(character, i) then
+						DataStore:DeleteCalendarEvent(character, i)
+					end
 				end
 			end
 		end
@@ -316,7 +310,7 @@ function ns:GetInfo(index)
 	local event = ns:Get(index)		-- dereference event
 	if not event then return end
 	
-	local character = DataStore:GetCharacter(event.char, event.realm)
+	local character = DataStore:GetCharacter(event.char, event.realm, event.account)
 	local char = DataStore:GetColoredCharacterName(character)
 	
 	if event.realm ~= GetRealmName() then	-- different realm ?
@@ -325,7 +319,7 @@ function ns:GetInfo(index)
 	
 	local title, desc = eventTypes[event.eventType]:GetInfo(event)
 
-	return char, event.eventTime, title, desc
+	return char, event.eventTime, title, desc, character, event.eventType, event.parentID 
 end
 
 function ns:GetDayCount(year, month, day)
@@ -402,71 +396,71 @@ function ns:BuildList()
 
 	local timeGap = DataStore:GetClientServerTimeGap() or 0
 	
-	for realm in pairs(DataStore:GetRealms()) do
-		for characterName, character in pairs(DataStore:GetCharacters(realm)) do
-			-- add all timers, even expired ones. Expiries will be handled elsewhere.
-			
-			-- Profession Cooldowns
-			local professions = DataStore:GetProfessions(character)
-			if professions then
-				for professionName, profession in pairs(professions) do
-					local supportsSharedCD
-					if professionName == GetSpellInfo(2259) or			-- alchemy
-						professionName == GetSpellInfo(3908) or 			-- tailoring
-						professionName == GetSpellInfo(2575) then			-- mining
-						supportsSharedCD = true		-- current profession supports shared cooldowns
-					end
-					
-					if supportsSharedCD then
-						local sharedCDFound		-- is there a shared cd for this profession ?
-						for i = 1, DataStore:GetNumActiveCooldowns(profession) do
-							local _, _, _, expiresAt = DataStore:GetCraftCooldownInfo(profession, i)
+	for account in pairs(DataStore:GetAccounts()) do
+		for realm in pairs(DataStore:GetRealms(account)) do
+			for characterName, character in pairs(DataStore:GetCharacters(realm, account)) do
+				-- add all timers, even expired ones. Expiries will be handled elsewhere.
+				
+				-- Profession Cooldowns
+				local professions = DataStore:GetProfessions(character)
+				if professions then
+					for professionName, profession in pairs(professions) do
+						local supportsSharedCD
+						if professionName == GetSpellInfo(2259) or			-- alchemy
+							-- professionName == GetSpellInfo(3908) or 			-- tailoring
+							professionName == GetSpellInfo(2575) then			-- mining
+							supportsSharedCD = true		-- current profession supports shared cooldowns
+						end
+						
+						if supportsSharedCD then
+							local sharedCDFound		-- is there a shared cd for this profession ?
+							for i = 1, DataStore:GetNumActiveCooldowns(profession) do
+								local _, _, _, expiresAt = DataStore:GetCraftCooldownInfo(profession, i)
 
-							if not sharedCDFound then
-								sharedCDFound = true
-								AddEvent(SHARED_CD_LINE, date("%Y-%m-%d", expiresAt), date("%H:%M", expiresAt), characterName, realm, nil, professionName)
+								if not sharedCDFound then
+									sharedCDFound = true
+									AddEvent(SHARED_CD_LINE, date("%Y-%m-%d", expiresAt), date("%H:%M", expiresAt), characterName, realm, account, nil, professionName)
+								end
+							end
+						else
+							for i = 1, DataStore:GetNumActiveCooldowns(profession) do
+								local _, _, _, expiresAt = DataStore:GetCraftCooldownInfo(profession, i)
+								AddEvent(COOLDOWN_LINE, date("%Y-%m-%d", expiresAt), date("%H:%M", expiresAt), characterName, realm, account, i, profession)
 							end
 						end
-					else
-						for i = 1, DataStore:GetNumActiveCooldowns(profession) do
-							local _, _, _, expiresAt = DataStore:GetCraftCooldownInfo(profession, i)
-							AddEvent(COOLDOWN_LINE, date("%Y-%m-%d", expiresAt), date("%H:%M", expiresAt), characterName, realm, i, profession)
-						end
 					end
 				end
-			end
-			
-			-- Saved Instances
-			local dungeons = DataStore:GetSavedInstances(character)
-			if dungeons then
-				for key, _ in pairs(dungeons) do
-					local reset, lastCheck = DataStore:GetSavedInstanceInfo(character, key)
-					local expires = reset + lastCheck + timeGap
-					AddEvent(INSTANCE_LINE, date("%Y-%m-%d",expires), date("%H:%M",expires), characterName, realm, key)
+
+				-- Saved Instances
+				local dungeons = DataStore:GetSavedInstances(character)
+				if dungeons then
+					for key, _ in pairs(dungeons) do
+						local reset, lastCheck = DataStore:GetSavedInstanceInfo(character, key)
+						local expires = reset + lastCheck + timeGap
+						
+						AddEvent(INSTANCE_LINE, date("%Y-%m-%d",expires), date("%H:%M",expires), characterName, realm, account, key)
+					end
 				end
-			end
-			
-			-- Calendar Events
-			local num = DataStore:GetNumCalendarEvents(character) or 0 
-			for i = 1, num do
-				local eventDate, eventTime = DataStore:GetCalendarEventInfo(character, i)
 				
-				-- TODO: do not add declined invitations
-				AddEvent(CALENDAR_LINE, eventDate, eventTime, characterName, realm, i)
-			end
-			
-			-- Other timers (like mysterious egg, etc..)
-			num = DataStore:GetNumItemCooldowns(character) or 0
-			for i = 1, num do
-				local _, lastCheck, duration = DataStore:GetItemCooldownInfo(character, i)
-				if duration == nil then
-					duration = 0
+				-- Calendar Events
+				local num = DataStore:GetNumCalendarEvents(character) or 0 
+				for i = 1, num do
+					local eventDate, eventTime = DataStore:GetCalendarEventInfo(character, i)
+					
+					-- TODO: do not add declined invitations
+					AddEvent(CALENDAR_LINE, eventDate, eventTime, characterName, realm, i)
 				end
-				if lastCheck == nil then
-					lastCheck = 0
-				end
-				local expires = duration + lastCheck + timeGap
-				AddEvent(TIMER_LINE, date("%Y-%m-%d",expires), date("%H:%M",expires), characterName, realm, i)
+				
+				-- Salt Shaker
+				local saltShakerID = 15846
+				
+				DataStore:SearchBagsForItem(character, saltShakerID, function(bagName, container, slotID) 
+					local startTime, duration = DataStore:GetContainerCooldownInfo(container, slotID)
+					if startTime then
+						local expires = startTime + duration
+						AddEvent(TIMER_LINE, date("%Y-%m-%d",expires), date("%H:%M",expires), characterName, realm, account, saltShakerID)				
+					end
+				end)
 			end
 		end
 	end

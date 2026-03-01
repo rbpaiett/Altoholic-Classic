@@ -15,24 +15,20 @@ Other services offered by DataStore:
 
 local addonName, addon = ...
 DataStore = LibStub("AceAddon-3.0"):NewAddon(addon, addonName, "AceConsole-3.0", "AceEvent-3.0", "AceComm-3.0", "AceSerializer-3.0")
+local GetAddOnMetadata = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
 addon.Version = "v" .. GetAddOnMetadata(addonName, "Version")
 
-local THIS_ACCOUNT = "Default"
-local THIS_REALM = GetRealmName()
-local THIS_CHAR = UnitName("player")
-local THIS_CHARKEY = format("%s.%s.%s", THIS_ACCOUNT, THIS_REALM, THIS_CHAR)
+addon.ThisAccount = "Default"
+addon.ThisRealm = GetRealmName()
+addon.ThisChar = UnitName("player")
+addon.ThisCharKey = format("%s.%s.%s", addon.ThisAccount, addon.ThisRealm, addon.ThisChar)
+
 local commPrefix = "DataStore"
 local Characters, Guilds			-- pointers to the parts of the DB that contain character, guild data
-
-local RegisteredModules = {}
-local RegisteredMethods = {}
 
 local guildMembersIndexes = {} 	-- hash table containing guild member info
 local onlineMembers = {}			-- simple hash table to track online members:		["member"] = true (or nil)
 local onlineMembersAlts = {}		-- simple hash table to track online members' alts:	["member"] = "alt1|alt2|alt3..."
-
-local currentCharacterKey
-local currentGuildKey
 
 -- Message types
 local MSG_ANNOUNCELOGIN				= 1	-- broadcast at login
@@ -51,11 +47,14 @@ local AddonDB_Defaults = {
 			--	["Account.Realm.Name"]  = true means the char is shared,
 			--	["Account.Realm.Name.Module"]  = true means the module is shared for that char
 		},
-		ConnectedRealms = nil,
+		ConnectedRealms = {},
 		ShortToLongRealmNames = {
 			-- relationship between "short" and "long" realm names, 
 			-- ex: ["MarécagedeZangar"] = "Marécage de Zangar"
 			-- necessary for guild banks on other realms..
+		},
+		AltGroups = {
+			-- ["GroupName"] = { "Alt 1 Key", "Alt 2 Key" .. }
 		},
 	}
 }
@@ -63,48 +62,10 @@ local AddonDB_Defaults = {
 local function GetKey(name, realm, account)
 	-- default values
 	name = name or UnitName("player")
-	realm = realm or GetRealmName()
-	account = account or THIS_ACCOUNT
+	realm = realm or addon.ThisRealm
+	account = account or addon.ThisAccount
 
 	return format("%s.%s.%s", account, realm, name)
-end
-
-local function GetDBVersion()
-	return addon.db.global.Version or 0
-end
-
-local function SetDBVersion(version)
-	addon.db.global.Version = version
-end
-
-local DBUpdaters = {
-	-- Table of functions, each one updates to its index's version
-	--	ex: [3] = the function that upgrades from v2 to v3
-	[1] = function(self)
-			-- This function moves character keys from the "global" level to the "Characters" sub-table
-			-- keys are also changed from a simple boolean (previously set to true) to a table. Only faction & guildname are tracked (for later use)
-			for k, v in pairs(addon.db.global) do
-				if type(v) == "boolean" then
-					if not addon.db.global.Characters[k].faction then		-- for characters other than the current one ..
-						addon.db.global.Characters[k].faction = "" -- set the faction field to create the table.
-					end
-					addon.db.global[k] = nil	-- kill the key at the old location
-				end
-			end
-		end,
-}
-
-local function UpdateDB()
-	local version = GetDBVersion()
-
-	for i = (version+1), #DBUpdaters do		-- start from latest version +1 to the very last
-		DBUpdaters[i]()
-		SetDBVersion(i)
-	end
-
-	DBUpdaters = nil
-	GetDBVersion = nil
-	SetDBVersion = nil
 end
 
 local function GetAlts(guild)
@@ -116,8 +77,8 @@ local function GetAlts(guild)
 	for k, v in pairs(Characters) do
 		local accountKey, realmKey, charKey = strsplit(".", k)
 
-		if accountKey and accountKey == THIS_ACCOUNT then			-- same account
-			if realmKey and realmKey == GetRealmName() then			-- same realm
+		if accountKey and accountKey == addon.ThisAccount then			-- same account
+			if realmKey and realmKey == addon.ThisRealm then			-- same realm
 				if charKey and charKey ~= UnitName("player") then	-- skip current char
 					if v.guildName and v.guildName == guild then		-- same guild (to send only guilded alts, privacy concern, do not change this)
 						table.insert(out, charKey)
@@ -151,21 +112,12 @@ local function GuildWhisper(player, messageType, ...)
 	end
 end
 
-local function CopyTable(src, dest)
-	for k, v in pairs (src) do
-		if type(v) == "table" then
-			dest[k] = {}
-			CopyTable(v, dest[k])
-		else
-			dest[k] = v
-		end
-	end
-end
 
 -- *** Event Handlers ***
 local currentGuildName
 
 local function OnPlayerGuildUpdate()
+
 	-- at login this event is called between OnEnable and PLAYER_ALIVE, where GetGuildInfo returns a wrong value
 	-- however, the value returned here is correct
 	if IsInGuild() and not currentGuildName then		-- the event may be triggered multiple times, and GetGuildInfo may return incoherent values in subsequent calls, so only save if we have no value.
@@ -182,12 +134,18 @@ local function OnPlayerGuildUpdate()
 			else
 				-- if realm is not nil, the guild key will use the long realm name
 				local longName = addon:GetLongRealmName(realmName)	
-			
+
 				if longName then
 					guildKey = GetKey(currentGuildName, longName)
+					
+					-- Now check for a connected realm !
+					if longName ~= addon.ThisRealm then
+						addon.db.global.ConnectedRealms[longName] = addon.ThisRealm
+						addon.db.global.ConnectedRealms[addon.ThisRealm] = longName
+					end
 				end
 			end
-
+			
 			-- guild key may be nil if the character is on a different realm than his guild, and he never logged on to that server
 			-- .. so the long realm name is unknown ..
 			if guildKey then
@@ -277,54 +235,15 @@ local function GuildCommHandler(prefix, message, distribution, sender)
 	end
 end
 
--- Explanation of this piece of code
--- Whenever DataStore:MethodXXX(arg1, arg2, etc..) is called, this attempts to find the method in the registered list
--- If this method is character related, we intercept the string (ex: ["Default.RealmZZZ.CharYYY") and get the associated character table in the module that owns these data
--- since we actually pass a table to registered methods, the "conversion" is done here.
-
---[[	*** Sample code ***
-	local character = DataStore:GetCharacter()
-
-	-- while the implementation of GetNumSpells in DataStore_Spells expects a table as first parameter, the string value returned by GetCharacter is converted on the fly
-	-- this service prevents having to maintain a separate pointer to each character table in the respective DataStore_* modules.
-	local n = DataStore:GetNumSpells(character, "Fire")
-	print(n)
---]]
-
-local lookupMethods = { __index = function(self, key)
-	return function(self, arg1, ...)
-		if not RegisteredMethods[key] then
---			print(format("DataStore : method <%s> is missing.", key))			-- enable this in Debug only, there's a risk that this function gets called unexpectedly
-			return
-		end
-
-		if RegisteredMethods[key].isCharBased then		-- if this method is character related, the first expected parameter is the character
-			local owner = RegisteredMethods[key].owner
-			currentCharacterKey = arg1
-			arg1 = owner.Characters[currentCharacterKey]	-- turns a "string" parameter into a table, fully intended.
-			if not arg1.lastUpdate then return end			-- lastUpdate must be present in the Character part of a db, if not, data is unavailable
-			
-		elseif RegisteredMethods[key].isGuildBased then	-- if this method is guild related, the first expected parameter is the guild
-			local owner = RegisteredMethods[key].owner
-			currentGuildKey = arg1
-			arg1 = owner.Guilds[currentGuildKey]			-- turns a "string" parameter into a table, fully intended.
-			if not arg1 then return end
-		end
-		return RegisteredMethods[key].func(arg1, ...)
-	end
-end }
 
 function addon:OnInitialize()
 	addon.db = LibStub("AceDB-3.0"):New("DataStoreDB", AddonDB_Defaults)
 
 	Characters = addon.db.global.Characters
 	Guilds = addon.db.global.Guilds
-	UpdateDB()
 	
 	-- a hidden frame to contain all children frames of submodules, this avoids polluting _G[].
 	addon.Frames = CreateFrame("Frame", "DataStoreFrames", UIParent)
-
-	setmetatable(addon, lookupMethods)
 
 	addon:SetupOptions()		-- See Options.lua
 end
@@ -351,8 +270,7 @@ function addon:OnEnable()
 		end
 	end
 
-	addon.db.global.ConnectedRealms = nil
-	addon:SetLongRealmName(THIS_REALM:gsub(" ", ""), THIS_REALM)
+	addon:SetLongRealmName(addon.ThisRealm:gsub(" ", ""), addon.ThisRealm)
 end
 
 function addon:OnDisable()
@@ -363,122 +281,12 @@ function addon:OnDisable()
 end
 
 -- *** DB functions ***
-function addon:RegisterModule(moduleName, module, publicMethods, allowOverrides)
-	assert(type(moduleName) == "string")
-	assert(type(module) == "table")
-
-	-- add the module's database address (addon.db.global) to the list of known modules, if it is not already known
-	if RegisteredModules[moduleName] then return end
-
-	RegisteredModules[moduleName] = module
-	local db = module.db.global
-
-	-- simplifies the life of child modules, and prepares a few pointers for them
-	module.ThisCharacter = db.Characters[GetKey()]
-	module.Characters = db.Characters
-	module.Guilds = db.Guilds
-
-	-- register module's public method
-	for methodName, method in pairs(publicMethods) do
-		if RegisteredMethods[methodName] and not allowOverrides then
-			print(format("DataStore:RegisterMethod() : adding method for module <%s> failed.", moduleName))
-			print(format("DataStore:RegisterMethod() : method <%s> already exists !", methodName))
-			return
-		end
-
-		RegisteredMethods[methodName] = {
-			func = method,
-			owner = module, 			-- module that owns this method & associated data
-		}
-	end
-
-	-- automatically clean orphan data in child modules (ie: data exist for a char/guild in a sub module, but no key in the main module)
-	-- needs fixing ! test with empty sv files to reproduce
-	-- for charKey, _ in pairs(db.Characters) do
-
-		-- if the key is not valid in the main module, kill the data
-		-- if not Characters[charKey] or not Characters[charKey].faction then
-			-- db.Characters[charKey] = nil
-		-- end
-	-- end
-end
-
--- returns owning module's name or nil if method is not registered
-function addon:GetMethodOwner(methodName)
-	local info = RegisteredMethods[methodName]
-	local ownerName
-	if info then
-		local owner = info.owner
-		if owner.GetName then
-			-- implemented for any AceAddon addon or module
-			ownerName = owner:GetName()
-		else
-			for moduleName, moduleTable in pairs(RegisteredModules) do
-				if moduleTable == owner then
-					ownerName = moduleName
-					break
-				end
-			end
-		end
-	end
-	return ownerName
-end
-
-function addon:SetCharacterBasedMethod(methodName)
-	-- flags a given method as character based
-	if RegisteredMethods[methodName] then
-		-- this will take care of error checking before calling the registered method, and pass the appropriate character table as argument
-		RegisteredMethods[methodName].isCharBased = true
-	end
-end
-
-function addon:IsCharacterBasedMethod(methodName)
-	local info = RegisteredMethods[methodName]
-	if info and info.isCharBased then
-		return true
-	end
-end
-
-function addon:SetGuildBasedMethod(methodName)
-	if RegisteredMethods[methodName] then
-		RegisteredMethods[methodName].isGuildBased = true		-- same as above for guilds
-	end
-end
-
-function addon:IsGuildBasedMethod(methodName)
-	local info = RegisteredMethods[methodName]
-	if info and info.isGuildBased then
-		return true
-	end
-end
-
-function addon:GetMethodInfo(methodName)
-	return addon:GetMethodOwner(methodName), addon:IsCharacterBasedMethod(methodName), addon:IsGuildBasedMethod(methodName)
-end
-
 function addon:GetGuildCommHandler()
 	return GuildCommHandler
 end
 
 function addon:SetGuildCommCallbacks(prefix, callbacks)
 	GuildCommCallbacks[prefix] = callbacks		-- no need to create a new table, it exists already as a local table in the calling module
-end
-
-function addon:IsModuleEnabled(name)
-	assert(type(name) == "string")
-
-	if RegisteredModules[name] then
-		return true
-	end
-end
-
-function addon:GetCurrentCharacterKey()
-	return currentCharacterKey
-end
-
-function addon:GetCurrentGuildKey()
-	-- review if still necessary
-	return currentGuildKey
 end
 
 function addon:GetThisGuildKey()
@@ -488,7 +296,7 @@ function addon:GetThisGuildKey()
 	
 	if not realm then
 		-- realm = nil : guild is on the same realm as the player
-		return format("%s.%s.%s", THIS_ACCOUNT, GetRealmName(), guild)
+		return format("%s.%s.%s", addon.ThisAccount, addon.ThisRealm, guild)
 	end
 	
 	-- realm not nil : guild is on a connected realm
@@ -497,7 +305,17 @@ function addon:GetThisGuildKey()
 	local longName = addon:GetLongRealmName(realm)
 	if not longName then return end
 	
-	return format("%s.%s.%s", THIS_ACCOUNT, longName, guild)
+	return format("%s.%s.%s", addon.ThisAccount, longName, guild)
+end
+
+function addon:IsCurrentPlayer(playerName, realm, account)
+	return (playerName == addon.ThisChar) 
+		and (realm == addon.ThisRealm) 
+		and (account == addon.ThisAccount)
+end
+
+function addon:IsCurrentPlayerKey(playerKey)
+	return playerKey == addon.ThisCharKey
 end
 
 function addon:GetCharacter(name, realm, account)
@@ -509,8 +327,8 @@ end
 
 function addon:GetCharacters(realm, account)
 	-- get a list of characters on a given realm/account
-	realm = realm or GetRealmName()
-	account = account or THIS_ACCOUNT
+	realm = realm or addon.ThisRealm
+	account = account or addon.ThisAccount
 
 	local out = {}
 	local accountKey, realmKey, charKey
@@ -538,14 +356,14 @@ end
 
 function addon:DeleteCharacter(name, realm, account)
 	local key = GetKey(name, realm, account)
-	if not Characters[key] or key == THIS_CHARKEY then return end	-- never delete current character
+	if not Characters[key] or key == addon.ThisCharKey then return end	-- never delete current character
 
 	-- delete the character in all modules
-	for moduleName, moduleDB in pairs(RegisteredModules) do
+	addon:IterateDBModules(function(moduleDB, moduleName) 
 		if moduleDB.Characters then
 			moduleDB.Characters[key] = nil
 		end
-	end
+	end)
 
 	-- delete the key in DataStore
 	Characters[key] = nil
@@ -564,16 +382,22 @@ end
 function addon:GetGuild(name, realm, account)
 	name = name or GetGuildInfo("player")
 	local key = GetKey(name, realm, account)
-
+	
 	if Guilds[key] then		-- if the key is known, return it to caller, it can be passed to other modules
 		return key
+	else	-- if the key is not known, try checking the connected realm info
+		key = GetKey(name, addon.db.global.ConnectedRealms[addon.ThisRealm], account)
+		
+		if Guilds[key] then	-- if the key is known, return it to caller, it can be passed to other modules
+			return key
+		end
 	end
 end
 
 function addon:GetGuilds(realm, account)
 	-- get a list of guilds on a given realm/account
-	realm = realm or GetRealmName()
-	account = account or THIS_ACCOUNT
+	realm = realm or addon.ThisRealm
+	account = account or addon.ThisAccount
 
 	local out = {}
 	local accountKey, realmKey, guildKey
@@ -604,19 +428,18 @@ function addon:GetGuildFaction(name, realm, account)
 	end
 end
 
-function addon:DeleteGuild(name, realm, account)
-	local key = GetKey(name, realm, account)
-	if not Guilds[key] then return end
+function addon:DeleteGuild(guildKey)
+	if not Guilds[guildKey] then return end
 
 	-- delete the guild in all modules
-	for moduleName, moduleDB in pairs(RegisteredModules) do
+	addon:IterateDBModules(function(moduleDB) 
 		if moduleDB.Guilds then
-			moduleDB.Guilds[key] = nil
+			moduleDB.Guilds[guildKey] = nil
 		end
-	end
+	end)
 
 	-- delete the key in DataStore
-	Guilds[key] = nil
+	Guilds[guildKey] = nil
 end
 
 function addon:DeleteRealm(realm, account)
@@ -633,7 +456,7 @@ local function WipeCharacterTable(t)
 	if not t then return end
 
 	for key, v in pairs(t) do	-- key is the character key
-		if key ~= THIS_CHARKEY then	-- only delete an entry if it is not the current character
+		if key ~= addon.ThisCharKey then	-- only delete an entry if it is not the current character
 			t[key] = nil
 		end
 	end
@@ -650,10 +473,10 @@ end
 function addon:ClearAllData()
 
 	-- sub-module data
-	for moduleName, moduleDB in pairs(RegisteredModules) do
+	addon:IterateDBModules(function(moduleDB) 
 		WipeCharacterTable(moduleDB.Characters)
 		WipeGuildTable(moduleDB.Guilds)
-	end
+	end)
 
 	-- main module data
 	WipeCharacterTable(Characters)
@@ -661,7 +484,7 @@ function addon:ClearAllData()
 end
 
 function addon:GetRealms(account)
-	account = account or THIS_ACCOUNT
+	account = account or addon.ThisAccount
 
 	local out = {}
 	local accountKey, realmKey
@@ -696,106 +519,29 @@ function addon:GetAccounts()
 	return out
 end
 
-function addon:GetModules()
-	return RegisteredModules
-		-- for moduleName, module in pairs(DS:GetModules()) do
-		-- end
-end
+function addon:IterateCharacters(realmFilter, accountFilter, callback)
+	
+	-- to do : take the filters into account in the loop
+	
+	local accounts = addon:GetAccounts()							-- Get the accounts
+	accounts[addon.ThisAccount] = nil								-- Remove the current account, because we want to put it first in the list
+	
+	local sortedAccounts = addon:HashToSortedArray(accounts)	-- Sort the remaining accounts in alphabetical order
+	table.insert(sortedAccounts, 1, addon.ThisAccount)			-- Then add the current account in first position
 
-function addon:GetCharacterTable(module, name, realm, account)
-	-- module can be either the module name (string) or the module table
-	-- ex: DS:GetCharacterTable("DataStore_Containers", ...) or DS:GetCharacterTable(DataStore_Containers, ...)
-	if type(module) == "string" then
-		module = RegisteredModules[module]
-	end
-
-	assert(type(module) == "table")
-	return module.Characters[GetKey(name, realm, account)]
-end
-
-function addon:GetModuleLastUpdate(module, name, realm, account)
-	-- module can be either the module name (string) or the module table
-	-- ex: DS:GetModuleLastUpdate("DataStore_Containers", ...) or DS:GetModuleLastUpdate(DataStore_Containers, ...)
-	if type(module) == "string" then
-		module = RegisteredModules[module]
-	end
-
-	assert(type(module) == "table")
-
-	local key = GetKey(name, realm, account)
-	if key then
-		return module.Characters[key].lastUpdate
-	end
-end
-
-function addon:GetModuleLastUpdateByKey(module, key)
-	-- module can be either the module name (string) or the module table
-	-- ex: DS:GetModuleLastUpdate("DataStore_Containers", ...) or DS:GetModuleLastUpdate(DataStore_Containers, ...)
-	if type(module) == "string" then
-		module = RegisteredModules[module]
-	end
-
-	if key and type(module) == "table" then
-		return module.Characters[key].lastUpdate
-	end
-end
-
-function addon:ImportData(module, data, name, realm, account)
-	-- module can be either the module name (string) or the module table
-	-- ex: DS:ImportData("DataStore_Containers", ...) or DS:ImportData(DataStore_Containers, ...)
-	if type(module) == "string" then
-		module = RegisteredModules[module]
-	end
-
-	assert(type(module) == "table")
-	-- change this, it shoudl be a COPYTABLE instead of an assignation, otherwise, ace DB wildcards are not applied
-	-- module.Characters[GetKey(name, realm, account)] = data
-	CopyTable(data, module.Characters[GetKey(name, realm, account)])
-
-end
-
-function addon:ImportCharacter(key, faction, guild)
-	-- after data has been imported, add a player entry to the DB, so that it becomes "visible" to the outside world.
-	-- in other words, the correct sequence of operations should be something like:
-	--	DataStore:ImportData(DataStore_Talents)
-	--	DataStore:ImportData(DataStore_Spells)
-	--	DataStore:ImportCharacter(key, faction, guild)
-
-	Characters[key].faction = faction
-	Characters[key].guildName = guild
-
-	-- ensure a key is created for every module, even those which were not imported. Required for proper UI support without extra validation of every method
-	for moduleName, moduleDB in pairs(RegisteredModules) do
-		if moduleDB.Characters then
-			moduleDB.Characters[key].lastUpdate = time()
-		end
-	end
-end
-
-function addon:SetOption(module, option, value)
-	-- module can be either the module name (string) or the module table
-	-- ex: DS:SetOption("DataStore_Containers", ...) or DS:SetOption(DataStore_Containers, ...)
-	if type(module) == "string" then
-		module = RegisteredModules[module]
-	end
-
-	if type(module) == "table" then
-		if module.db.global.Options then
-			module.db.global.Options[option] = value
-		end
-	end
-end
-
-function addon:GetOption(module, option)
-	-- module can be either the module name (string) or the module table
-	-- ex: DS:GetOption("DataStore_Containers", ...) or DS:GetOption(DataStore_Containers, ...)
-	if type(module) == "string" then
-		module = RegisteredModules[module]
-	end
-
-	if type(module) == "table" then
-		if module.db.global.Options then
-			return module.db.global.Options[option]
+	for _, account in pairs(sortedAccounts) do
+		local realms = addon:GetRealms(account)					-- Get the realms
+		realms[addon.ThisRealm] = nil									-- Remove the current realm, because we want to put it first in the list
+		
+		local sortedRealms = addon:HashToSortedArray(realms)	-- Sort the remaining realms in alphabetical order
+		table.insert(sortedRealms, 1, addon.ThisRealm)			-- Then add the current realm in first position
+	
+		for _, realm in pairs(sortedRealms) do
+			local sortedCharacters = addon:HashToSortedArray(addon:GetCharacters(realm, account))
+			
+			for _, characterName in ipairs(sortedCharacters) do
+				callback(account, realm, characterName, addon:GetCharacter(characterName, realm, account))
+			end		
 		end
 	end
 end
@@ -848,31 +594,4 @@ function addon:GetNameOfMain(player)
 			end
 		end
 	end
-end
-
--- *** Connected Realms ***
-function addon:SetLongRealmName(realm, name)
-	addon.db.global.ShortToLongRealmNames[realm] = name
-end
-
-function addon:GetLongRealmName(realm)
-	return (realm) and addon.db.global.ShortToLongRealmNames[realm] or nil
-end
-
-function addon:GetRealmsConnectedWith(realm)
-	local realms = addon.db.global.ShortToLongRealmNames
-	local out = {}
-
-	local autoCompleteRealms = GetAutoCompleteRealms()		-- this could return nil..
-	if autoCompleteRealms then
-		for _, shortName in pairs(autoCompleteRealms) do
-			local longName = realms[shortName]
-			
-			if longName and longName ~= THIS_REALM then
-				table.insert(out, longName)
-			end
-		end
-	end
-	
-	return out
 end

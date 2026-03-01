@@ -67,7 +67,7 @@ local GatheringNodes = {			-- Add herb/ore possession info to Plants/Mines, than
 	[L["Stranglekelp"]]         =  3820,
 	[L["Sungrass"]]             =  8838,
 	[L["Wild Steelbloom"]]      =  3355,
-	[L["Wintersbite"]]          =  3819,	
+	[L["Wintersbite"]]          =  3819,
 }
 
 -- *** Utility functions ***
@@ -106,7 +106,7 @@ local cachedItemID, cachedCount, cachedTotal, cachedSource
 local cachedRecipeOwners
 
 local itemCounts = {}
-local itemCountsLabels = {	L["Bags"], L["Bank"], L["AH"], L["Equipped"], L["Mail"] }
+local itemCountsLabels = {	L["Bags"], L["Bank"], VOID_STORAGE, REAGENT_BANK, L["AH"], L["Equipped"], L["Mail"], CURRENCY }
 local counterLines = {}		-- list of lines containing a counter to display in the tooltip
 
 local function AddCounterLine(owner, counters)
@@ -145,10 +145,10 @@ local function GetRealmsList()
 end
 
 local function GetCharacterItemCount(character, searchedID)
-	itemCounts[1], itemCounts[2] = DataStore:GetContainerItemCount(character, searchedID)
-	itemCounts[3] = DataStore:GetAuctionHouseItemCount(character, searchedID)
-	itemCounts[4] = DataStore:GetInventoryItemCount(character, searchedID)
-	itemCounts[5] = DataStore:GetMailItemCount(character, searchedID)
+	itemCounts[1], itemCounts[2], itemCounts[3], itemCounts[4] = DataStore:GetContainerItemCount(character, searchedID)
+	itemCounts[5] = DataStore:GetAuctionHouseItemCount(character, searchedID)
+	itemCounts[6] = DataStore:GetInventoryItemCount(character, searchedID)
+	itemCounts[7] = DataStore:GetMailItemCount(character, searchedID)
 	
 	local charCount = 0
 	for _, v in pairs(itemCounts) do
@@ -171,7 +171,6 @@ local function GetCharacterItemCount(character, searchedID)
 		end
 		
 		local t = {}
-
 		for k, v in pairs(itemCounts) do
 			if v > 0 then	-- if there are more than 0 items in this container
 				table.insert(t, colors.white .. itemCountsLabels[k] .. ": "  .. colors.teal .. v)
@@ -223,9 +222,15 @@ local function GetItemCount(searchedID)
 end
 
 function addon:GetRecipeOwners(professionName, link, recipeLevel)
-	local craftName = GetCraftNameFromRecipeLink(link)
+	local craftName
+
+	-- April 2021 : removed processing with the spell ID.
+	-- In classic, the spell ID of a craft is actually not known
+	-- So force the add-on to compare the recipe header with the item name
+
+	craftName = GetCraftNameFromRecipeLink(link)
 	if not craftName then return end		-- still nothing usable ? then exit
-	   
+	
 	local know = {}				-- list of alts who know this recipe
 	local couldLearn = {}		-- list of alts who could learn it
 	local willLearn = {}			-- list of alts who will be able to learn it later
@@ -235,16 +240,26 @@ function addon:GetRecipeOwners(professionName, link, recipeLevel)
 		return know, couldLearn, willLearn
 	end
 	
-	local profession, isKnownByChar
+	local profession, isKnownByChar, isEnchanting
 	for characterName, character in pairs(DataStore:GetCharacters()) do
 		profession = DataStore:GetProfession(character, professionName)
-		isKnownByChar = nil
-		if profession then
-			DataStore:IterateRecipes(profession, 0, 0, function(recipeData)
-				local _, recipeID, isLearned = DataStore:GetRecipeInfo(recipeData)
-				local skillName = DataStore:GetResultItemName(recipeID)
 
-				if (skillName) and (string.lower(skillName) == string.lower(craftName)) and isLearned then
+		isKnownByChar = nil
+		isEnchanting = (professionName == GetSpellInfo(7411))
+		
+		if profession then
+
+			-- Let's try to match on the craft name
+			DataStore:IterateRecipes(profession, 0, function(color, itemID)
+				local itemName
+
+				if isEnchanting then
+					itemName = GetSpellInfo(itemID) or ""
+				else
+					itemName = GetItemInfo(itemID) or ""
+				end
+				
+				if string.lower(itemName) == string.lower(craftName) then
 					isKnownByChar = true
 					return true	-- stop iteration
 				end
@@ -320,11 +335,11 @@ local function ProcessTooltip(tooltip, link)
 	if not itemID then return end
 	
 	if (itemID == 0) and (TradeSkillFrame ~= nil) and TradeSkillFrame:IsVisible() then
-		if (GetMouseFocus():GetName()) == "TradeSkillSkillIcon" then
+		if ((GetMouseFoci() and GetMouseFoci()):GetName()) == "TradeSkillSkillIcon" then
 			itemID = tonumber(GetTradeSkillItemLink(TradeSkillFrame.selectedSkill):match("item:(%d+):")) or nil
 		else
 			for i = 1, 8 do
-				if (GetMouseFocus():GetName()) == "TradeSkillReagent"..i then
+				if ((GetMouseFoci() and GetMouseFoci()):GetName()) == "TradeSkillReagent"..i then
 					itemID = tonumber(GetTradeSkillReagentItemLink(TradeSkillFrame.selectedSkill, i):match("item:(%d+):")) or nil
 					break
 				end
@@ -453,7 +468,9 @@ local function Hook_SetCurrencyToken(self,index,...)
 	GameTooltip:AddLine(" ",1,1,1);
 
 	local total = 0
-	for _, character in pairs(DataStore:GetCharacters()) do
+	local characters = DataStore:HashValueToSortedArray(DataStore:GetCharacters())
+	
+	for _, character in pairs(characters) do
 		local _, _, count = DataStore:GetCurrencyInfoByName(character, currency)
 		if count and count > 0 then
 			GameTooltip:AddDoubleLine(DataStore:GetColoredCharacterName(character),  colors.teal .. count);
@@ -474,6 +491,7 @@ local function OnItemRefTooltipShow(tooltip, ...)
 	addon:ListCharsOnQuest( _G["ItemRefTooltipTextLeft1"]:GetText(), UnitName("player"), ItemRefTooltip)
 	ItemRefTooltip:Show()
 end
+
 
 local function OnItemRefTooltipSetItem(tooltip, ...)
 	if (not isTooltipDone) and tooltip then
@@ -529,6 +547,15 @@ function addon:InitTooltip()
 			function(self, recipeID, reagentIndex)
 				if recipeID and reagentIndex then
 					storedLink = C_TradeSkillUI.GetRecipeReagentItemLink(recipeID, reagentIndex)
+				end
+			end,
+			nil
+		},
+		-- Required for enchanting
+		SetCraftItem = {
+			function(self, craftIndex, reagentIndex)
+				if craftIndex and reagentIndex then
+					storedLink = GetCraftReagentItemLink(craftIndex, reagentIndex)
 				end
 			end,
 			nil

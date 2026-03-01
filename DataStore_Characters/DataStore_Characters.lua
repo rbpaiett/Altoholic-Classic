@@ -10,8 +10,30 @@ _G[addonName] = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "A
 
 local addon = _G[addonName]
 
-local THIS_ACCOUNT = "Default"
+local isCoreDataMissing
 local MAX_LOGOUT_TIMESTAMP = 5000000000	-- 5 billion, current values are at ~1.4 billion, in seconds, that leaves us 110+ years, I think we're covered..
+local MAX_ALT_LEVEL = WOW_PROJECT_ID == WOW_PROJECT_WRATH_CLASSIC
+	and MAX_PLAYER_LEVEL_TABLE[GetExpansionLevel()]
+	or MAX_PLAYER_LEVEL
+
+-- Replace RAID_CLASS_COLORS which is not always loaded when we need it.
+local classColors = {
+	["HUNTER"] = "|cffaad372",
+	["WARRIOR"] = "|cffc69b6d",
+	["PALADIN"] = "|cfff48cba",
+	["MAGE"] = "|cff3fc6ea",
+	["PRIEST"] = "|cFFFFFFFF",
+	["SHAMAN"] = "|cff0070dd",
+	["WARLOCK"] = "|cff8787ed",
+	["DEMONHUNTER"] = "|cffa330c9",
+	["DEATHKNIGHT"] = "|cffc41e3a",
+	["DRUID"] = "|cffff7c0a",
+	["MONK"] = "|cff00ff96",
+	["ROGUE"] = "|cfffff468",
+	["EVOKER"] = "|cff33937f",
+	
+	
+}
 
 local AddonDB_Defaults = {
 	global = {
@@ -29,7 +51,9 @@ local AddonDB_Defaults = {
 				englishRace = nil,
 				class = nil,
 				englishClass = nil,	-- "WARRIOR", "DRUID" .. english & caps, regardless of locale
+				classID = nil,
 				faction = nil,
+				localizedFaction = nil,
 				gender = nil,			-- UnitSex
 				lastLogoutTimestamp = nil,
 				money = nil,
@@ -37,6 +61,7 @@ local AddonDB_Defaults = {
 				playedThisLevel = 0,	-- /played at this level, in seconds
 				zone = nil,				-- character location
 				subZone = nil,
+				bindLocation = nil,	-- location where the hearthstone is bound to
 				
 				-- ** XP **
 				XP = nil,				-- current level xp
@@ -49,6 +74,11 @@ local AddonDB_Defaults = {
 				guildName = nil,		-- nil = not in a guild, as returned by GetGuildInfo("player")
 				guildRankName = nil,
 				guildRankIndex = nil,
+				
+				-- ** Expansion Features / 9.0 - Shadowlands **
+				renownLevel = 1,					-- Covenant Renown Level
+				activeCovenantID = 0,			-- Active Covenant ID (0 = None)
+				activeSoulbindID = 0,			-- Active Soulbind ID (0 = None)
 			}
 		}
 	}
@@ -62,24 +92,51 @@ end
 -- *** Scanning functions ***
 local function ScanPlayerLocation()
 	local character = addon.ThisCharacter
+	
 	character.zone = GetRealZoneText()
 	character.subZone = GetSubZoneText()
 end
 
+local function ScanCovenant()
+	local character = addon.ThisCharacter
+	
+	character.activeCovenantID = C_Covenants.GetActiveCovenantID()
+	character.activeSoulbindID = C_Soulbinds.GetActiveSoulbindID()
+	character.renownLevel = C_CovenantSanctumUI.GetRenownLevel()
+end
+
+
 -- *** Event Handlers ***
 local function OnPlayerGuildUpdate()
+
 	-- at login this event is called between OnEnable and PLAYER_ALIVE, where GetGuildInfo returns a wrong value
 	-- however, the value returned here is correct
+	local character = addon.ThisCharacter
+	local hasGuild = (character.guildName ~= nil)
+	
 	if IsInGuild() then
 		-- find a way to improve this, it's minor, but it's called too often at login
 		local name, rank, index = GetGuildInfo("player")
 		if name and rank and index then
-			local character = addon.ThisCharacter
 			character.guildName = name
 			character.guildRankName = rank
 			character.guildRankIndex = index
 		end
-	end
+	else
+		-- If the event is triggered after a gkick/gquit, be sure to clean the guild info
+		character.guildName = nil
+		character.guildRankName = nil
+		character.guildRankIndex = nil
+		
+		-- if the character had a guild when entering this function, but is no longer in a guild, then trigger the event
+		if hasGuild then
+			addon:SendMessage("DATASTORE_GUILD_LEFT")
+		end
+	end	
+end
+
+local function ScanXPDisabled()
+	addon.ThisCharacter.isXPDisabled = IsXPUserDisabled() or nil
 end
 
 local function OnPlayerUpdateResting()
@@ -104,16 +161,22 @@ local function OnPlayerAlive()
 	character.name = UnitName("player")		-- to simplify processing a bit, the name is saved in the table too, in addition to being part of the key
 	character.level = UnitLevel("player")
 	character.race, character.englishRace = UnitRace("player")
-	character.class, character.englishClass = UnitClass("player")
+	character.class, character.englishClass, character.classID = UnitClass("player")
 	character.gender = UnitSex("player")
-	character.faction = UnitFactionGroup("player")
+	character.faction, character.localizedFaction = UnitFactionGroup("player")
 	character.lastLogoutTimestamp = MAX_LOGOUT_TIMESTAMP
+	character.bindLocation = GetBindLocation()
 	character.lastUpdate = time()
 	
 	OnPlayerMoney()
 	OnPlayerXPUpdate()
 	OnPlayerUpdateResting()
 	OnPlayerGuildUpdate()
+	
+	if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then
+		ScanXPDisabled()
+		ScanCovenant()
+	end
 end
 
 local function OnPlayerLogout()
@@ -125,10 +188,23 @@ local function OnPlayerLevelUp(event, newLevel)
 	addon.ThisCharacter.level = newLevel
 end
 
+local function OnHearthstoneBound(event)
+	addon.ThisCharacter.bindLocation = GetBindLocation()
+end
+
 local function OnTimePlayedMsg(event, totalTime, currentLevelTime)
 	addon.ThisCharacter.played = totalTime
 	addon.ThisCharacter.playedThisLevel = currentLevelTime
 end
+
+local function OnCovenantChosen()
+	ScanCovenant()
+end
+
+local function OnSanctumRenownLevelChanged()
+	ScanCovenant()
+end
+
 
 -- ** Mixins **
 local function _GetCharacterName(character)
@@ -144,34 +220,58 @@ local function _GetCharacterRace(character)
 end
 
 local function _GetCharacterClass(character)
-	return character.class or "", character.englishClass or ""
+	return character.class or "", character.englishClass or "", character.classID
 end
 
 local function _GetColoredCharacterName(character)
-	return format("|c%s%s", RAID_CLASS_COLORS[character.englishClass].colorStr, character.name)
+	-- check if name and englishClass are present, if they are not, core info is missing for at least one alt.
+	-- but we can't say which.. and there might be many, so only show the message once.
+	if (not character.name or not character.englishClass) and not isCoreDataMissing then
+		addon:Print("Core information about one or more characters is missing. Be sure to logout and login again with that character.\nThe add-on should be enabled while no character is logged in, otherwise character information cannot properly be read!")
+		isCoreDataMissing = true
+	end
+
+	return format("%s%s", classColors[character.englishClass], character.name)
 end
 	
 local function _GetCharacterClassColor(character)
 	-- return just the color of this character's class (based on the character key)
-	return format("|c%s", RAID_CLASS_COLORS[character.englishClass].colorStr)
+	return format("%s", classColors[character.englishClass])
 end
 
 local function _GetClassColor(class)
 	-- return just the color of for any english class 	
-	return format("|c%s", RAID_CLASS_COLORS[class].colorStr) or "|cFFFFFFFF"
+	return format("%s", classColors[class]) or "|cFFFFFFFF"
 end
 
 local function _GetCharacterFaction(character)
-	return character.faction or ""
+	return character.faction or "", character.localizedFaction or ""
 end
 	
 local function _GetColoredCharacterFaction(character)
-	if character.faction == "Alliance" then
-		return "|cFF2459FF" .. FACTION_ALLIANCE
-	elseif character.faction == "Neutral" then	-- for young pandas :)
-		return "|cFF909090" .. character.faction
+	-- Localized version may not yet be there, only added with a bugfix in 9.0.010 
+	-- removed the ELSE part later on, in the meantime, avoid generating loads of issues for players
+	
+	if character.localizedFaction then
+		if character.localizedFaction == FACTION_ALLIANCE then
+			return format("|cFF2459FF%s", FACTION_ALLIANCE)
+			
+		elseif character.localizedFaction == FACTION_HORDE then
+			return format("|cFFFF0000%s", FACTION_HORDE)
+			
+		else	-- for young pandas, who have a "Neutral" faction
+			return format("|cFF909090%s", character.localizedFaction)
+		end
 	else
-		return "|cFFFF0000" .. FACTION_HORDE
+		if character.faction == "Alliance" then
+			return format("|cFF2459FF%s", "Alliance")
+			
+		elseif character.faction == "Horde" then
+			return format("|cFFFF0000%s", "Horde")
+			
+		else	-- for young pandas, who have a "Neutral" faction
+			return format("|cFF909090%s", character.faction)
+		end
 	end
 end
 
@@ -185,6 +285,10 @@ end
 
 local function _GetMoney(character)
 	return character.money or 0
+end
+
+local function _GetBindLocation(character)
+	return character.bindLocation or ""
 end
 
 local function _GetXP(character)
@@ -289,6 +393,11 @@ local function _GetRestXPRate(character)
 		end
 	end
 	
+	-- ensure to report that a max level has not earned xp while resting
+	if character.level == MAX_ALT_LEVEL then
+		xpEarnedResting = -1
+	end
+	
 	return rate, savedXP, savedRate, rateEarnedResting, xpEarnedResting, maxXP, isFullyRested, timeUntilFullyRested
 end
 
@@ -301,18 +410,24 @@ local function _IsXPDisabled(character)
 end
 	
 local function _GetGuildInfo(character)
-	return character.guildName, character.guildRankName, character.guildRankIndex
+	return character.guildName or "", character.guildRankName, character.guildRankIndex
 end
 
 local function _GetPlayTime(character)
 	return (GetOption("HideRealPlayTime")) and 0 or character.played, character.playedThisLevel
 end
 
+local function _GetRealPlayTime(character)
+	-- return the real play time, not to be displayed, but just for computing (ex: which alt has the highest/lowest played ?)
+	return character.played
+end
+
 local function _GetLocation(character)
 	return character.zone, character.subZone
 end
 
-local PublicMethods = {
+
+local mixins = {
 	GetCharacterName = _GetCharacterName,
 	GetCharacterLevel = _GetCharacterLevel,
 	GetCharacterRace = _GetCharacterRace,
@@ -325,6 +440,7 @@ local PublicMethods = {
 	GetCharacterGender = _GetCharacterGender,
 	GetLastLogout = _GetLastLogout,
 	GetMoney = _GetMoney,
+	GetBindLocation = _GetBindLocation,
 	GetXP = _GetXP,
 	GetXPRate = _GetXPRate,
 	GetXPMax = _GetXPMax,
@@ -334,13 +450,31 @@ local PublicMethods = {
 	IsXPDisabled = _IsXPDisabled,
 	GetGuildInfo = _GetGuildInfo,
 	GetPlayTime = _GetPlayTime,
+	GetRealPlayTime = _GetRealPlayTime,
 	GetLocation = _GetLocation,
 }
 
-function addon:OnInitialize()
-	addon.db = LibStub("AceDB-3.0"):New(addonName .. "DB", AddonDB_Defaults)
+if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then
+	mixins["GetCovenantInfo"] = function(character)
+		return character.activeCovenantID, character.activeSoulbindID, character.renownLevel
+	end
 
-	DataStore:RegisterModule(addonName, addon, PublicMethods)
+	mixins["GetCovenantNameByID"] = function(id)
+		local data = C_Covenants.GetCovenantData(id)
+		return (data) and data.name or ""
+	end
+
+	mixins["GetCovenantName"] = function(character)
+		local id = character.activeCovenantID
+		local data = C_Covenants.GetCovenantData(id)
+		return (data) and data.name or ""	
+	end
+end
+
+function addon:OnInitialize()
+	addon.db = LibStub("AceDB-3.0"):New(format("%sDB", addonName), AddonDB_Defaults)
+
+	DataStore:RegisterModule(addonName, addon, mixins)
 	DataStore:SetCharacterBasedMethod("GetCharacterName")
 	DataStore:SetCharacterBasedMethod("GetCharacterLevel")
 	DataStore:SetCharacterBasedMethod("GetCharacterRace")
@@ -352,6 +486,7 @@ function addon:OnInitialize()
 	DataStore:SetCharacterBasedMethod("GetCharacterGender")
 	DataStore:SetCharacterBasedMethod("GetLastLogout")
 	DataStore:SetCharacterBasedMethod("GetMoney")
+	DataStore:SetCharacterBasedMethod("GetBindLocation")
 	DataStore:SetCharacterBasedMethod("GetXP")
 	DataStore:SetCharacterBasedMethod("GetXPRate")
 	DataStore:SetCharacterBasedMethod("GetXPMax")
@@ -361,7 +496,13 @@ function addon:OnInitialize()
 	DataStore:SetCharacterBasedMethod("IsXPDisabled")
 	DataStore:SetCharacterBasedMethod("GetGuildInfo")
 	DataStore:SetCharacterBasedMethod("GetPlayTime")
+	DataStore:SetCharacterBasedMethod("GetRealPlayTime")
 	DataStore:SetCharacterBasedMethod("GetLocation")
+	
+	if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then
+		DataStore:SetCharacterBasedMethod("GetCovenantInfo")
+		DataStore:SetCharacterBasedMethod("GetCovenantName")
+	end
 end
 
 function addon:OnEnable()
@@ -371,11 +512,19 @@ function addon:OnEnable()
 	addon:RegisterEvent("PLAYER_MONEY", OnPlayerMoney)
 	addon:RegisterEvent("PLAYER_XP_UPDATE", OnPlayerXPUpdate)
 	addon:RegisterEvent("PLAYER_UPDATE_RESTING", OnPlayerUpdateResting)
+	addon:RegisterEvent("HEARTHSTONE_BOUND", OnHearthstoneBound)
 	addon:RegisterEvent("PLAYER_GUILD_UPDATE", OnPlayerGuildUpdate)				-- for gkick, gquit, etc..
 	addon:RegisterEvent("ZONE_CHANGED", ScanPlayerLocation)
 	addon:RegisterEvent("ZONE_CHANGED_NEW_AREA", ScanPlayerLocation)
 	addon:RegisterEvent("ZONE_CHANGED_INDOORS", ScanPlayerLocation)
 	addon:RegisterEvent("TIME_PLAYED_MSG", OnTimePlayedMsg)					-- register the event if RequestTimePlayed is not called afterwards. If another addon calls it, we want to get the data anyway.
+	
+	if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then
+		addon:RegisterEvent("ENABLE_XP_GAIN", ScanXPDisabled)
+		addon:RegisterEvent("DISABLE_XP_GAIN", ScanXPDisabled)
+		addon:RegisterEvent("COVENANT_CHOSEN", OnCovenantChosen)
+		addon:RegisterEvent("COVENANT_SANCTUM_RENOWN_LEVEL_CHANGED", OnSanctumRenownLevelChanged)
+	end
 	
 	addon:SetupOptions()
 	
@@ -391,11 +540,16 @@ function addon:OnDisable()
 	addon:UnregisterEvent("PLAYER_MONEY")
 	addon:UnregisterEvent("PLAYER_XP_UPDATE")
 	addon:UnregisterEvent("PLAYER_UPDATE_RESTING")
-	addon:UnregisterEvent("ENABLE_XP_GAIN")
-	addon:UnregisterEvent("DISABLE_XP_GAIN")
 	addon:UnregisterEvent("PLAYER_GUILD_UPDATE")
 	addon:UnregisterEvent("ZONE_CHANGED")
 	addon:UnregisterEvent("ZONE_CHANGED_NEW_AREA")
 	addon:UnregisterEvent("ZONE_CHANGED_INDOORS")
 	addon:UnregisterEvent("TIME_PLAYED_MSG")
+	
+	if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then
+		addon:UnregisterEvent("ENABLE_XP_GAIN")
+		addon:UnregisterEvent("DISABLE_XP_GAIN")
+		addon:UnregisterEvent("COVENANT_CHOSEN")
+		addon:UnregisterEvent("COVENANT_SANCTUM_RENOWN_LEVEL_CHANGED")
+	end
 end

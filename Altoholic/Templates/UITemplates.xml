@@ -215,8 +215,9 @@
 	</Button>
 
 	<!-- IconList, used by Pets & Achievements -->
-	<Button name="AltoIconListItemTemplate" hidden="true" virtual="true">
-		<Size x="34" y="34" />
+	<Button name="AltoIconListItemTemplate" hidden="true" virtual="true" inherits="BackdropTemplate">
+		<!-- <Size x="34" y="34" /> -->
+		<Size x="31" y="31" />
 		<Layers> 
 			<Layer level="BACKGROUND"> 
 				<Texture parentKey="Background">
@@ -245,28 +246,25 @@
 			</Layer>
 		</Layers>
 		<Scripts>
-			<OnLoad>
+			<OnLoad inherit="prepend">
+				self:SetBackdrop({
+					bgFile = "Interface\\TutorialFrame\\TutorialFrameBackground",
+					edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+					tile = true,
+					tileSize = 30,
+					edgeSize = 8,
+					insets = { left = 5, right = 5, top = 5, bottom = 5, },
+				})
+				self:SetBackdropColor(1, 1, 1, 0)
+
 				local level = self:GetParent():GetFrameLevel()
 				self:SetFrameLevel(level + 1)
 				self:RegisterForClicks("LeftButtonDown", "RightButtonDown")
 			</OnLoad>
 			<OnLeave>
-				AltoTooltip:Hide();
+				AltoTooltip:Hide()
 			</OnLeave>
 		</Scripts>
-		<Backdrop parentKey="Backdrop" bgFile="Interface\TutorialFrame\TutorialFrameBackground" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
-			<EdgeSize>
-				<AbsValue val="8"/>
-			</EdgeSize>
-			<TileSize>
-				<!-- <AbsValue val="33"/> -->
-				<AbsValue val="30"/>
-			</TileSize>
-			<BackgroundInsets>
-				<AbsInset left="5" right="5" top="5" bottom="5"/>
-			</BackgroundInsets>
-			<Color r="1" g="1" b="1" a="0"/>
-		</Backdrop>
 	</Button>
 
 	<Button name="AltoIconListEntryTemplate" virtual="true">

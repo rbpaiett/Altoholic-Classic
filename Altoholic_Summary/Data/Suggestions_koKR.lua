@@ -166,7 +166,7 @@ addon.Suggestions = {
 		{ 300, "300 까지: 역병초 채집\n동부 및 서부 역병지대, 악령의 숲\nor Icecaps in 여명의 설원" },
 	},
 	[L["Skinning"]] = {
-		{ 525, "525 까지: 현재 숙련도 나누기 5\n 한 레벨의 몹 무두질" }
+		{ 300, "300 까지: 현재 숙련도 나누기 5\n 한 레벨의 몹 무두질" }
 	},
 
 	-- source: http://www.almostgaming.com/wowguides/world-of-warcraft-lockpicking-guide
